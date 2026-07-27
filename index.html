@@ -1073,6 +1073,32 @@ function nameForLogin(login){
 /* ============================================================
    GERADOR DE TEXTO DO WHATSAPP
    ============================================================ */
+function suggestNextEtapaDate(){
+  if(ETAPAS.length===0) return CONFIG.start;
+  var last=ETAPAS[ETAPAS.length-1].date;
+  return addDays(last, 7);
+}
+function openEditEtapaDate(idx){
+  var e=ETAPAS[idx];
+  var h='<h3>&#128197; Editar data da etapa '+e.n+'</h3>';
+  h+='<div class="field"><label>Nova data</label><input id="editEtapaDateInput" type="date" value="'+e.date+'"></div>';
+  h+='<div class="row-flex"><button class="btn" onclick="saveEtapaDate('+idx+')">Salvar</button><button class="btn ghost" onclick="closeModal()">Cancelar</button></div>';
+  openModal(h);
+}
+function saveEtapaDate(idx){
+  var d=document.getElementById('editEtapaDateInput').value;
+  if(!d){ alert('Escolha uma data.'); return; }
+  var e=ETAPAS[idx];
+  e.date=d;
+  if(DEMO_MODE || !e._id){ closeModal(); render(); return; }
+  db.collection('etapas').doc(e._id).update({date:d})
+    .then(function(){ closeModal(); loadAll(); })
+    .catch(function(err){ alert('Erro ao salvar: '+err.message); });
+}
+function findPix(name){
+  for(var i=0;i<PLAYERS.length;i++){ if(PLAYERS[i].name===name && PLAYERS[i].pix) return PLAYERS[i].pix; }
+  return '';
+}
 function whatsappText(etapa){
   var f=etapaFinance(etapa);
   var L=[];
@@ -1081,7 +1107,7 @@ function whatsappText(etapa){
   L.push('Total arrecadado: '+money(f.pote));
   L.push('');
   if(f.winner){
-    L.push(f.winner.name+' ganhou e tem que enviar '+money(f.prize2)+' para o pote (sendo '+money(f.potePremio)+' pr\u00eamio + '+money(f.churrasco)+' churrasco)');
+    L.push(f.winner.name+' ganhou e tem que enviar '+money(f.prize2)+' para o pote');
   }
   if(f.second){
     var net2 = f.second.net; // já é prize2 − buyin do 2º (calculado em etapaFinance)
@@ -1102,8 +1128,9 @@ function whatsappText(etapa){
   }
   L.push('');
   // PIX dos premiados (placeholder — vem da aba de PIX)
-  L.push('PIX: '+(f.winner?f.winner.name:'')+': tarcisiogb@gmail.com');
-  L.push('Pote: tarcisiogb@gmail.com');
+  L.push('PIX: '+(f.winner?f.winner.name:'')+': '+(f.winner?findPix(f.winner.name):''));
+  if(f.second) L.push('PIX: '+f.second.name+': '+findPix(f.second.name));
+  L.push('Pote: '+findPix('Tarcisio'));
   return L.join('\n');
 }
 
@@ -1552,7 +1579,7 @@ function viewPagamentos(){
     if(closedE) h+='<span class="badge">FECHADA</span>';
     else h+='<span class="badge" style="background:var(--red);color:#fff">'+pend+' PENDENTE'+(pend>1?'S':'')+'</span>';
     h+='</div>';
-    h+='<div class="muted" style="margin-bottom:10px">Prazo de pagamento: '+fmtDate(dl)+'</div>';
+    h+='<div class="muted" style="margin-bottom:10px">Prazo de pagamento: '+fmtDate(dl)+(STATE.isAdmin?' &middot; <span style="cursor:pointer;text-decoration:underline;color:var(--brass-deep)" onclick="openEditEtapaDate('+i+')">editar data da etapa</span>':'')+'</div>';
     if(f.winner || f.second){
       h+='<div class="tblwrap"><table><thead><tr><th>Respons\u00e1vel</th><th class="ctr">Refere-se a</th><th class="ctr">Valor</th><th class="ctr">Status</th>'+(STATE.isAdmin?'<th></th>':'')+'</tr></thead><tbody>';
       if(f.winner){
@@ -2124,7 +2151,7 @@ function viewAdmin(){
   h+='<div><div class="eyebrow">\u00c1rea restrita</div><h2 style="color:var(--bone);margin-bottom:0">Lan\u00e7ar etapa</h2></div>';
   h+='<button class="btn ghost sm" onclick="doLogout()">Sair</button></div>';
   h+='<div class="muted" style="margin:8px 0">Cole o resumo do PokerStars e informe a data do domingo.</div>';
-  h+='<div class="field"><label>Data da etapa</label><input id="etapaDate" type="date" value="'+CONFIG.start+'"></div>';
+  h+='<div class="field"><label>Data da etapa</label><input id="etapaDate" type="date" value="'+suggestNextEtapaDate()+'"></div>';
   h+='<div class="field"><label>Texto do PokerStars</label>';
   h+='<textarea id="psInput" placeholder="Cole aqui o resumo do torneio...">'+psSample()+'</textarea></div>';
   h+='<div class="row-flex"><button class="btn" onclick="doImport()">&#9827; Extrair resultado</button>';
