@@ -168,6 +168,7 @@ nav.tabs button.admin-tab.on{background:var(--brass-deep);color:#fff;border-colo
 .cel-poster.planilha .cel-close{background:rgba(0,0,0,.1);color:#111}
 .cel-poster.planilha .cel-hint{color:#555;text-shadow:none}
 #celPlanWrap{display:inline-block;width:max-content}
+#celRotateStage{width:100%;height:100%}
 .cel-plan-wrap{width:100%}
 .cel-plan-brand{font-family:'Archivo',sans-serif;font-weight:900;font-size:15px;color:#111;margin:26px 0 8px}
 .cel-plan-title2{font-family:'Inter';font-weight:600;font-size:10px;color:#555;margin-left:6px}
@@ -1487,8 +1488,8 @@ function buildEvolucaoPoster(idx){
   var h='<div class="cel-poster planilha">';
   h+='<button class="cel-close" onclick="closeCelebrate()">&#10005;</button>';
   h+=shareButtonHtml();
-  h+='<div class="cel-hint">Print pra postar &#128241;</div>';
-  h+='<div class="cel-plan-wrap" id="celPlanWrap">';
+  h+='<div class="cel-hint">Print pra postar &#128241; &middot; gire o celular se necess\u00e1rio</div>';
+  h+='<div id="celRotateStage"><div class="cel-plan-wrap" id="celPlanWrap">';
 
   h+='<div class="cel-plan-brand">&#9824; SP<span style="color:var(--brass-deep)">oker</span>N &#9830; <span class="cel-plan-title2">'+CONFIG.seasonName+' &middot; Etapa '+e.n+' &middot; '+fmtDate(e.date)+'</span></div>';
 
@@ -1498,11 +1499,11 @@ function buildEvolucaoPoster(idx){
   h+='</div>';
 
   h+='<div class="cel-plan-tblwrap"><table class="cel-plantable"><thead>';
-  h+='<tr><th colspan="9" class="cel-plan-group">Dados da temporada</th><th colspan="4" class="cel-plan-group gsep">Piores resultados</th><th colspan="'+winCols+'" class="cel-plan-group gsep">Hist\u00f3rico por etapa</th><th colspan="2" class="cel-plan-group gsep">'+etapaGroupLabel+'</th></tr>';
+  h+='<tr><th colspan="9" class="cel-plan-group">Dados da temporada</th><th colspan="5" class="cel-plan-group gsep">Piores resultados</th><th colspan="'+winCols+'" class="cel-plan-group gsep">Hist\u00f3rico por etapa</th><th colspan="2" class="cel-plan-group gsep">'+etapaGroupLabel+'</th></tr>';
   h+='<tr>';
   h+='<th>Nome</th><th class="ctr">Classif.</th><th class="ctr wnarrow">Pts brutos</th><th class="ctr wnarrow">Pts definitivo</th><th class="ctr wnarrow">Qtd jogos</th>';
   h+='<th class="ctr">Investimento</th><th class="ctr">Ganho acum.</th><th class="ctr">Custo/pt</th><th class="ctr">Pts/jogo</th>';
-  h+='<th class="ctr gsep">Pior</th><th class="ctr">Pior 2</th><th class="ctr">Pior 3</th><th class="ctr">Puni\u00e7\u00e3o</th>';
+  h+='<th class="ctr gsep">Pior</th><th class="ctr">Pior 2</th><th class="ctr">Pior 3</th><th class="ctr">3 piores (total)</th><th class="ctr">Puni\u00e7\u00e3o</th>';
   for(k=startCol;k<ETAPAS.length;k++) h+='<th class="ctr'+(k===startCol?' gsep':'')+'">'+fmtDateShort(ETAPAS[k].date)+'</th>';
   h+='<th class="ctr gsep">Pos. etapa</th><th class="ctr">Ganho etapa</th>';
   h+='</tr></thead><tbody>';
@@ -1543,6 +1544,8 @@ function buildEvolucaoPoster(idx){
     h+='<td class="ctr gsep">'+(worst[0]!==undefined?worst[0]:'&middot;')+'</td>';
     h+='<td class="ctr">'+(worst[1]!==undefined?worst[1]:'&middot;')+'</td>';
     h+='<td class="ctr">'+(worst[2]!==undefined?worst[2]:'&middot;')+'</td>';
+    var worstSum=worst.reduce(function(a,b){return a+b;},0);
+    h+='<td class="ctr"><b>'+worstSum+'</b></td>';
     h+='<td class="ctr">'+(p.penalty>0?('-'+p.penalty):'&middot;')+'</td>';
     for(k=startCol;k<ETAPAS.length;k++){
       var val=scoreInEtapa(ETAPAS[k],p.name);
@@ -1555,7 +1558,7 @@ function buildEvolucaoPoster(idx){
   h+='</tbody></table></div>';
 
   h+='<div class="cel-plan-footer">&#9824; &#9827; &#9829; &#9830; <b>SPokerN</b> &middot; Campeonato de poker entre amigos</div>';
-  h+='</div></div>';
+  h+='</div></div></div>';
   return h;
 }
 function buildCelebratePoster(){
@@ -1651,27 +1654,43 @@ function renderCelebrate(){
   else { el.classList.remove('no-scroll'); }
 }
 function fitEvolucaoToScreen(){
+  var stage=document.getElementById('celRotateStage');
   var wrap=document.getElementById('celPlanWrap');
-  if(!wrap) return;
+  if(!wrap || !stage) return;
   wrap.style.visibility='hidden';
   wrap.style.transform='none';
-  wrap.style.position='fixed';
-  wrap.style.top='50%';
-  wrap.style.left='50%';
+  stage.style.transform='none';
+  stage.style.position='static';
+  stage.style.width=''; stage.style.height='';
   requestAnimationFrame(function(){
     requestAnimationFrame(function(){
       var cw=wrap.scrollWidth, ch=wrap.scrollHeight;
       var vw=window.innerWidth, vh=window.innerHeight;
       var portrait = vh > vw;
-      var targetW = portrait ? vh : vw;
-      var targetH = (portrait ? vw : vh) - 70; // reserva espaço pro aviso "Print pra postar" no topo
-      var scale=1;
-      if(cw>0 && ch>0 && targetW>0 && targetH>0){
-        scale=Math.min((targetW-16)/cw, targetH/ch);
-        if(!isFinite(scale) || scale<=0) scale=0.4; else if(scale<0.15) scale=0.15; else if(scale>3) scale=3;
+      var scale=1, targetW, targetH;
+      stage.style.display='flex';
+      stage.style.alignItems='center';
+      stage.style.justifyContent='center';
+      if(portrait){
+        // o "palco" recebe o tamanho da tela invertido (deitado), gira 90° e volta pro lugar —
+        // técnica com dimensões em pixel fixas, sem depender de % ambíguo dentro do transform.
+        stage.style.position='fixed';
+        stage.style.top='0'; stage.style.left='0';
+        stage.style.width=vh+'px';
+        stage.style.height=vw+'px';
+        stage.style.transformOrigin='top left';
+        stage.style.transform='rotate(90deg) translateY(-100%)';
+        targetW=vh-16; targetH=vw-70;
+      } else {
+        stage.style.position='static';
+        targetW=vw-16; targetH=vh-70;
       }
-      var rot = portrait ? ' rotate(-90deg)' : '';
-      wrap.style.transform='translate(-50%,-50%)'+rot+' scale('+scale+')';
+      if(cw>0 && ch>0 && targetW>0 && targetH>0){
+        scale=Math.min(targetW/cw, targetH/ch, portrait?3:1);
+        if(!isFinite(scale) || scale<=0) scale=0.4; else if(scale<0.15) scale=0.15;
+      }
+      wrap.style.transformOrigin='center center';
+      wrap.style.transform='scale('+scale+')';
       wrap.style.visibility='visible';
     });
   });
@@ -1776,7 +1795,7 @@ function viewClass(){
   h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th>';
   var e;
   for(e=0;e<ETAPAS.length;e++) h+='<th class="ctr">'+fmtDateShort(ETAPAS[e].date)+'</th>';
-  h+='<th class="ctr">Total</th></tr></thead><tbody>';
+  h+='<th class="ctr">Total</th><th class="ctr" style="color:var(--brass)">3 piores</th></tr></thead><tbody>';
   for(i=0;i<arr.length;i++){
     var pl=arr[i];
     h+='<tr><td>'+pl.name+'</td>';
@@ -1784,7 +1803,9 @@ function viewClass(){
       var val=scoreInEtapa(ETAPAS[e],pl.name);
       h+='<td class="ctr">'+(val===null?'&middot;':val)+'</td>';
     }
-    h+='<td class="ctr"><b>'+pl.total+'</b></td></tr>';
+    var sortedPl=pl.scores.slice().sort(function(a,b){return a-b;});
+    var worstSumPl=sortedPl.slice(0,3).reduce(function(a,b){return a+b;},0);
+    h+='<td class="ctr"><b>'+pl.total+'</b></td><td class="ctr" style="color:var(--brass);font-weight:800">'+worstSumPl+'</td></tr>';
   }
   h+='</tbody></table></div></div>';
   if(ETAPAS.length>0) h+='<div class="row-flex" style="margin-top:4px"><button class="btn ghost sm" onclick="openCelebratePicker()">&#127942; Gerar tela de comemora\u00e7\u00e3o</button><button class="btn ghost sm" onclick="openCelebrate(\'evolucao\','+(ETAPAS.length-1)+')">&#128248; Compartilhar evolu\u00e7\u00e3o da etapa</button></div>';
