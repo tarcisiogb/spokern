@@ -1055,10 +1055,15 @@ function classification(limit, srcEtapas){
     var pl=map[k];
     var sum=0, s;
     for(s=0;s<pl.scores.length;s++) sum+=pl.scores[s];
-    // descarte dos 3 piores (só quando houver mais jogos que o descarte)
-    var discarded=0, sorted=pl.scores.slice().sort(function(a,b){return a-b;});
-    if(pl.scores.length > CONFIG.discardWorst){
-      for(s=0;s<CONFIG.discardWorst;s++) discarded+=sorted[s];
+    // descarte dos 3 piores: etapas que o grupo já disputou mas o jogador NÃO jogou
+    // entram como resultado 0 pro cálculo do descarte (ausência conta como pior resultado).
+    // Só passa a valer quando o grupo já tiver mais etapas do que o descarte (LN > 3).
+    var discarded=0;
+    if(LN > CONFIG.discardWorst){
+      var missed=Math.max(0, LN - pl.games);
+      var fullScores=pl.scores.concat(new Array(missed).fill(0));
+      var sortedFull=fullScores.slice().sort(function(a,b){return a-b;});
+      for(s=0;s<CONFIG.discardWorst;s++) discarded+=sortedFull[s];
     }
     pl.gross=sum;
     pl.discarded=discarded;
@@ -1544,8 +1549,7 @@ function buildEvolucaoPoster(idx){
     h+='<td class="ctr gsep">'+(worst[0]!==undefined?worst[0]:'&middot;')+'</td>';
     h+='<td class="ctr">'+(worst[1]!==undefined?worst[1]:'&middot;')+'</td>';
     h+='<td class="ctr">'+(worst[2]!==undefined?worst[2]:'&middot;')+'</td>';
-    var worstSum=worst.reduce(function(a,b){return a+b;},0);
-    h+='<td class="ctr"><b>'+worstSum+'</b></td>';
+    h+='<td class="ctr" style="color:var(--red);font-weight:800">'+p.discarded+'</td>';
     h+='<td class="ctr">'+(p.penalty>0?('-'+p.penalty):'&middot;')+'</td>';
     for(k=startCol;k<ETAPAS.length;k++){
       var val=scoreInEtapa(ETAPAS[k],p.name);
@@ -1795,7 +1799,7 @@ function viewClass(){
   h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th>';
   var e;
   for(e=0;e<ETAPAS.length;e++) h+='<th class="ctr">'+fmtDateShort(ETAPAS[e].date)+'</th>';
-  h+='<th class="ctr">Total</th><th class="ctr" style="color:var(--brass)">3 piores</th></tr></thead><tbody>';
+  h+='<th class="ctr">Total</th><th class="ctr" style="color:var(--red)">3 piores</th><th class="ctr" style="color:var(--red)">Bruto \u2212 3 piores</th></tr></thead><tbody>';
   for(i=0;i<arr.length;i++){
     var pl=arr[i];
     h+='<tr><td>'+pl.name+'</td>';
@@ -1803,9 +1807,8 @@ function viewClass(){
       var val=scoreInEtapa(ETAPAS[e],pl.name);
       h+='<td class="ctr">'+(val===null?'&middot;':val)+'</td>';
     }
-    var sortedPl=pl.scores.slice().sort(function(a,b){return a-b;});
-    var worstSumPl=sortedPl.slice(0,3).reduce(function(a,b){return a+b;},0);
-    h+='<td class="ctr"><b>'+pl.total+'</b></td><td class="ctr" style="color:var(--brass);font-weight:800">'+worstSumPl+'</td></tr>';
+    var netMinus=pl.gross-pl.discarded;
+    h+='<td class="ctr"><b>'+pl.total+'</b></td><td class="ctr" style="color:var(--red);font-weight:800">'+pl.discarded+'</td><td class="ctr" style="color:var(--red);font-weight:800">'+netMinus+'</td></tr>';
   }
   h+='</tbody></table></div></div>';
   if(ETAPAS.length>0) h+='<div class="row-flex" style="margin-top:4px"><button class="btn ghost sm" onclick="openCelebratePicker()">&#127942; Gerar tela de comemora\u00e7\u00e3o</button><button class="btn ghost sm" onclick="openCelebrate(\'evolucao\','+(ETAPAS.length-1)+')">&#128248; Compartilhar evolu\u00e7\u00e3o da etapa</button></div>';
