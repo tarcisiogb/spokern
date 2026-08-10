@@ -1064,10 +1064,11 @@ function classification(limit, srcEtapas){
     pl.total=sum - discarded - pl.penalty;
     arr.push(pl);
   }
-  // trava do descarte: só passa a valer pra ORDENAÇÃO quando todo mundo que já jogou tiver 6+ jogos.
+  // trava do descarte: só passa a valer pra ORDENAÇÃO quando pelo menos 8 jogadores tiverem 6+ jogos.
   // até lá, ordena pela pontuação bruta (menos punição) — mas o "definitivo" já fica visível pra todos.
   var playedArr = arr.filter(function(p){ return p.games>0; });
-  var allReached6 = playedArr.length>0 && playedArr.every(function(p){ return p.games>=6; });
+  var countWith6 = playedArr.filter(function(p){ return p.games>=6; }).length;
+  var allReached6 = countWith6>=8;
   for(k=0;k<arr.length;k++){
     arr[k].sortScore = allReached6 ? arr[k].total : (arr[k].gross - arr[k].penalty);
   }
@@ -1508,7 +1509,7 @@ function buildEvolucaoPoster(idx){
   for(i=0;i<arr.length;i++){
     var p=arr[i];
     var sorted=p.scores.slice().sort(function(a,b){return a-b;});
-    var worst=(p.games>3)?sorted.slice(0,3):[];
+    var worst=sorted.slice(0,3);
     var ganhoStyle = p.ganho>=0 ? 'background:#d7ecd9;color:#1f7a4d' : 'background:#f6d9d5;color:#a8362a';
     var posB=prevRank[p.name], posA=i+1, mvHtml='<span style="color:#a8362a;font-weight:700">novo</span>';
     if(posB){
@@ -1669,7 +1670,7 @@ function fitEvolucaoToScreen(){
         scale=Math.min((targetW-16)/cw, targetH/ch);
         if(!isFinite(scale) || scale<=0) scale=0.4; else if(scale<0.15) scale=0.15; else if(scale>3) scale=3;
       }
-      var rot = portrait ? ' rotate(90deg)' : '';
+      var rot = portrait ? ' rotate(-90deg)' : '';
       wrap.style.transform='translate(-50%,-50%)'+rot+' scale('+scale+')';
       wrap.style.visibility='visible';
     });
@@ -1718,14 +1719,15 @@ function viewClass(){
   var prev = ETAPAS.length>1 ? rankMap(ETAPAS.length-1) : {};
   var etapasDone=ETAPAS.length;
   var usingBruto=CLASS_USING_BRUTO;
-  var pendingFor6 = arr.filter(function(p){ return p.games>0 && p.games<6; }).length;
+  var countWith6 = arr.filter(function(p){ return p.games>=6; }).length;
+  var pendingFor6 = Math.max(0, 8-countWith6);
   var h='', i;
   h+='<div class="panel">';
   h+='<div class="eyebrow">Classifica\u00e7\u00e3o geral</div>';
   h+='<h2>Pontos corridos</h2>';
   h+='<div class="muted" style="margin:-8px 0 10px">'+etapasDone+' de '+CONFIG.rounds+' etapas &middot; definitivo = bruto \u2212 3 piores \u2212 atrasos</div>';
   if(usingBruto){
-    h+='<div class="demo-banner" style="text-align:left">&#9888;&#65039; Ordenando pela <b>pontua\u00e7\u00e3o bruta</b> (menos atrasos) \u2014 o desconto dos 3 piores s\u00f3 passa a valer pra posi\u00e7\u00e3o quando todo mundo completar 6 etapas jogadas'+(pendingFor6>0?' ('+pendingFor6+' '+pluralS(pendingFor6,'jogador falta','jogadores faltam')+')':'')+'. O valor definitivo de cada um j\u00e1 aparece abaixo do nome.</div>';
+    h+='<div class="demo-banner" style="text-align:left">&#9888;&#65039; Ordenando pela <b>pontua\u00e7\u00e3o bruta</b> (menos atrasos) \u2014 o desconto dos 3 piores s\u00f3 passa a valer pra posi\u00e7\u00e3o quando pelo menos <b>8 jogadores</b> completarem 6 etapas jogadas ('+countWith6+' de 8'+(pendingFor6>0?', faltam '+pendingFor6:'')+'). O valor definitivo de cada um j\u00e1 aparece abaixo do nome.</div>';
   }
   if(arr.length===0){
     var tip = (typeof DEMO_MODE!=='undefined' && !DEMO_MODE) ? ' O organizador ainda n\u00e3o lan\u00e7ou/semeou nenhuma etapa no banco.' : '';
