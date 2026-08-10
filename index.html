@@ -1064,7 +1064,15 @@ function classification(limit, srcEtapas){
     pl.total=sum - discarded - pl.penalty;
     arr.push(pl);
   }
-  arr.sort(function(a,b){ return b.total-a.total || b.ganho-a.ganho; });
+  // trava do descarte: só passa a valer pra ORDENAÇÃO quando todo mundo que já jogou tiver 6+ jogos.
+  // até lá, ordena pela pontuação bruta (menos punição) — mas o "definitivo" já fica visível pra todos.
+  var playedArr = arr.filter(function(p){ return p.games>0; });
+  var allReached6 = playedArr.length>0 && playedArr.every(function(p){ return p.games>=6; });
+  for(k=0;k<arr.length;k++){
+    arr[k].sortScore = allReached6 ? arr[k].total : (arr[k].gross - arr[k].penalty);
+  }
+  CLASS_USING_BRUTO = !allReached6; // exposto pra tela mostrar o aviso certo
+  arr.sort(function(a,b){ return b.sortScore-a.sortScore || b.ganho-a.ganho; });
   return arr;
 }
 
@@ -1202,6 +1210,7 @@ function whatsappText(etapa){
    RENDER
    ============================================================ */
 var STATE={ tab:'class', isAdmin:false, importPreview:null, highlight:null, histSeasons:null };
+var CLASS_USING_BRUTO=true; // atualizado por classification() a cada chamada
 var TABS=[
   {id:'class', label:'Classifica\u00e7\u00e3o'},
   {id:'graficos', label:'Gr\u00e1ficos'},
@@ -1705,14 +1714,19 @@ function activeNamesSet(){
 function viewClass(){
   var actSet=activeNamesSet();
   var arr=classification().filter(function(p){return p.games>0 || actSet[p.name];});
-  arr.sort(function(a,b){ return b.total-a.total || b.ganho-a.ganho; });
+  arr.sort(function(a,b){ return b.sortScore-a.sortScore || b.ganho-a.ganho; });
   var prev = ETAPAS.length>1 ? rankMap(ETAPAS.length-1) : {};
   var etapasDone=ETAPAS.length;
+  var usingBruto=CLASS_USING_BRUTO;
+  var pendingFor6 = arr.filter(function(p){ return p.games>0 && p.games<6; }).length;
   var h='', i;
   h+='<div class="panel">';
   h+='<div class="eyebrow">Classifica\u00e7\u00e3o geral</div>';
   h+='<h2>Pontos corridos</h2>';
-  h+='<div class="muted" style="margin:-8px 0 14px">'+etapasDone+' de '+CONFIG.rounds+' etapas &middot; definitivo = bruto \u2212 3 piores \u2212 atrasos</div>';
+  h+='<div class="muted" style="margin:-8px 0 10px">'+etapasDone+' de '+CONFIG.rounds+' etapas &middot; definitivo = bruto \u2212 3 piores \u2212 atrasos</div>';
+  if(usingBruto){
+    h+='<div class="demo-banner" style="text-align:left">&#9888;&#65039; Ordenando pela <b>pontua\u00e7\u00e3o bruta</b> (menos atrasos) \u2014 o desconto dos 3 piores s\u00f3 passa a valer pra posi\u00e7\u00e3o quando todo mundo completar 6 etapas jogadas'+(pendingFor6>0?' ('+pendingFor6+' '+pluralS(pendingFor6,'jogador falta','jogadores faltam')+')':'')+'. O valor definitivo de cada um j\u00e1 aparece abaixo do nome.</div>';
+  }
   if(arr.length===0){
     var tip = (typeof DEMO_MODE!=='undefined' && !DEMO_MODE) ? ' O organizador ainda n\u00e3o lan\u00e7ou/semeou nenhuma etapa no banco.' : '';
     h+='<div class="empty">Nenhuma etapa lan\u00e7ada ainda.'+tip+'</div></div>';
@@ -1737,11 +1751,18 @@ function viewClass(){
     } else {
       h+='<div class="lb-sub">'+p.games+' '+pluralS(p.games,'jogo','jogos')+' &middot; '+p.wins+' '+pluralS(p.wins,'vit\u00f3ria','vit\u00f3rias')+'</div>';
       var brk='<span class="brk">'+p.gross+' brutos</span>';
-      if(p.discarded>0) brk+='<span class="brk minus">\u2212'+p.discarded+' (3 piores)</span>';
       if(p.penalty>0) brk+='<span class="brk minus">\u2212'+p.penalty+' (atraso)</span>';
+      if(usingBruto){
+        brk+='<span class="brk" style="color:var(--brass-deep)">seria '+p.total+' no definitivo</span>';
+        if(p.discarded>0) brk+='<span class="brk minus">\u2212'+p.discarded+' (3 piores, ainda n\u00e3o vale)</span>';
+      } else if(p.discarded>0){
+        brk+='<span class="brk minus">\u2212'+p.discarded+' (3 piores)</span>';
+      }
       h+='<div class="lb-brk">'+brk+'</div></div>';
     }
-    h+='<div class="lb-pts tabnum">'+p.total+'<small>definitivos</small></div>';
+    var bigVal = usingBruto ? (p.gross-p.penalty) : p.total;
+    var bigLbl = usingBruto ? 'brutos' : 'definitivos';
+    h+='<div class="lb-pts tabnum">'+bigVal+'<small>'+bigLbl+'</small></div>';
     h+='</div>';
   }
   h+='</div>';
