@@ -1806,18 +1806,21 @@ function viewClass(){
   }
   var podArr=[]; var pk; for(pk in podTally) podArr.push({name:pk, c:podTally[pk], tot:podTally[pk][0]+podTally[pk][1]+podTally[pk][2]});
   podArr.sort(function(a,b){ return b.c[0]-a.c[0] || b.c[1]-a.c[1] || b.c[2]-a.c[2]; });
-  if(podArr.length>0){
-    h+='<div class="panel dark">';
-    h+='<div class="eyebrow">P\u00f3dios</div>';
-    h+='<h2 style="color:var(--bone)">Quantidade de ranking por pessoa</h2>';
-    h+='<div class="muted" style="margin:-8px 0 10px">Quantas vezes cada um ficou entre o 1\u00ba e o 3\u00ba lugar nas etapas desta temporada.</div>';
+  h+='<div class="panel dark">';
+  h+='<div class="eyebrow">P\u00f3dios</div>';
+  h+='<h2 style="color:var(--bone)">Quantidade de ranking por pessoa</h2>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Quantas vezes cada um ficou entre o 1\u00ba e o 3\u00ba lugar nas etapas desta temporada.</div>';
+  if(podArr.length===0){
+    h+='<div class="muted">Nenhum p\u00f3dio encontrado ainda ('+ETAPAS.length+' '+pluralS(ETAPAS.length,'etapa lan\u00e7ada','etapas lan\u00e7adas')+').</div>';
+  } else {
     h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="ctr">1\u00ba</th><th class="ctr">2\u00ba</th><th class="ctr">3\u00ba</th><th class="ctr">Total</th></tr></thead><tbody>';
     for(pk=0;pk<podArr.length;pk++){
       var pdd=podArr[pk];
       h+='<tr><td>'+pdd.name+'</td><td class="ctr">'+pdd.c[0]+'</td><td class="ctr">'+pdd.c[1]+'</td><td class="ctr">'+pdd.c[2]+'</td><td class="ctr"><b>'+pdd.tot+'</b></td></tr>';
     }
-    h+='</tbody></table></div></div>';
+    h+='</tbody></table></div>';
   }
+  h+='</div>';
 
   // grade de evolução (centralizada, com datas)
   h+='<div class="panel dark">';
