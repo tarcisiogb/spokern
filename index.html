@@ -2106,6 +2106,10 @@ function viewInsights(){
     var topW=LS.winrate[0];
     h+='<div class="stat"><div class="k">Melhor aproveitamento (temporada)</div><div class="v">'+topW.n+'</div><div class="muted">'+topW.pct+'% ('+topW.w+'/'+topW.p+')</div></div>';
   }
+  if(LS.finals.length){
+    var topFin=LS.finals[0];
+    h+='<div class="stat"><div class="k">Mais chegou ao heads-up</div><div class="v">'+topFin.n+'</div><div class="muted">'+topFin.v+'x</div></div>';
+  }
   h+='</div></div>';
 
   // curiosidades da temporada — mesmo conjunto que o bloco histórico, mas escopo = temporada atual
@@ -2120,8 +2124,7 @@ function viewInsights(){
     }
   }
   var tPlays=topEntry(plays);
-  var sByMf=LS.finals[0];
-  var sEligWr=LS.winrate; // já veio com limiar reduzido (5) pra fazer sentido numa temporada
+  var sEligWr=LS.huWinrate; // aproveitamento ESPECÍFICO no heads-up (vitórias ÷ vezes que chegou na final)
   var sBestHu=sEligWr.length?sEligWr[0]:null;
   var sWorstHu=sEligWr.length?sEligWr[sEligWr.length-1]:null;
   var sByVice=LS.vice[0];
@@ -2134,7 +2137,6 @@ function viewInsights(){
   if(tPlays) h+='<div class="pill-line"><span>&#127183; Mais viciado (mais jogou)</span><span><b>'+tPlays.name+'</b> <span class="muted">'+tPlays.val+' etapas</span></span></div>';
   if(maxPote.who) h+='<div class="pill-line"><span>&#128176; Maior pote levado</span><span><b>'+maxPote.who+'</b> <span class="muted">'+money(maxPote.prize)+' &middot; '+fmtDateShort(maxPote.date)+'</span></span></div>';
   if(maxEntries.who && maxEntries.val>0) h+='<div class="pill-line"><span>&#128260; Mais entradas numa etapa</span><span><b>'+maxEntries.who+'</b> <span class="muted">'+maxEntries.val+' '+pluralS(maxEntries.val,'entrada','entradas')+' &middot; '+fmtDateShort(maxEntries.date)+'</span></span></div>';
-  if(sByMf) h+='<div class="pill-line"><span>&#9889; Mais chegou ao heads-up</span><span><b>'+sByMf.n+'</b> <span class="muted">'+sByMf.v+'x</span></span></div>';
   if(sByVice) h+='<div class="pill-line"><span>&#129352; Rei do vice</span><span><b>'+sByVice.n+'</b> <span class="muted">'+sByVice.v+' vice'+(sByVice.v>1?'s':'')+'</span></span></div>';
   if(sMatch) h+='<div class="pill-line"><span>&#9876; Confronto mais comum</span><span><b>'+sMatch.a+' \u00d7 '+sMatch.b+'</b> <span class="muted">'+sMatch.n+'x</span></span></div>';
   if(sBestHu) h+='<div class="pill-line"><span>&#127942; Matador no heads-up</span><span><b>'+sBestHu.n+'</b> <span class="muted">'+sBestHu.pct+'% ('+sBestHu.w+'/'+sBestHu.p+')</span></span></div>';
@@ -2152,7 +2154,7 @@ function viewInsights(){
   function findTally(map,name){ return map[name] || [0,0,0]; }
   var mfArr=LIVE.finals.slice(); // "mesas finais" = apareceu no heads-up (pos 1 ou 2)
   var byMf=mfArr[0];
-  var eligWr=LIVE.winrate;
+  var eligWr=LIVE.huWinrate; // aproveitamento ESPECÍFICO no heads-up (não o aproveitamento geral)
   var bestHu=eligWr.length?eligWr[0]:null;
   var worstHu=eligWr.length?eligWr[eligWr.length-1]:null;
   var byVice=LIVE.vice[0];
@@ -2972,8 +2974,17 @@ function computeLiveCuriosities(pool, minGames){
     }
   }
   lateCand.sort(function(a,b){return b.pct-a.pct;});
+  // aproveitamento ESPEC\u00cdFICO no heads-up: vit\u00f3rias quando chegou na final \u00f7 vezes que chegou na final
+  // (diferente do aproveitamento geral, que \u00e9 vit\u00f3rias \u00f7 todas as etapas jogadas)
+  var huWinrate=[];
+  for(k in finals){
+    if(finals[k]>=1){
+      huWinrate.push({n:k, w:wins[k]||0, p:finals[k], pct:Math.round((wins[k]||0)/finals[k]*1000)/10});
+    }
+  }
+  huWinrate.sort(function(a,b){return b.pct-a.pct;});
   return {
-    streaks:streaks, winrate:winrate, matchups:matchups, finals:finalsArr, vice:viceArr,
+    streaks:streaks, winrate:winrate, huWinrate:huWinrate, matchups:matchups, finals:finalsArr, vice:viceArr,
     podiumTally:podiumTally, bestStart:lateCand[0]||null, plays:plays, wins:wins
   };
 }
