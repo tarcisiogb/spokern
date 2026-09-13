@@ -2041,72 +2041,136 @@ function viewAvulsas(){
 /* ============================================================
    PREVISÕES — chances de título (simulação) + simulador pessoal
    ============================================================ */
+function computeHistoricalPriors(){
+  // média histórica de cada jogador (todas as temporadas ANTERIORES — genesis + arquivadas,
+  // nunca a atual, pra não misturar com o que já é tratado separadamente) puxada pra média
+  // do grupo todo quando a amostra histórica de alguém é pequena (ou inexistente, pra jogador novo).
+  var pastKeys=GENESIS_SEASON_ORDER.slice(), s;
+  for(s=0;s<SEASONS_LIST.length;s++) pastKeys.push(SEASONS_LIST[s]._id);
+  var pool=buildFullEtapaPool(pastKeys);
+  var scoresByName={}, allScores=[], i, j;
+  for(i=0;i<pool.length;i++){
+    var res=pool[i].results;
+    if(!res) continue;
+    for(j=0;j<res.length;j++){
+      var pts=pointsForPos(res[j].pos), nm=res[j].name;
+      if(!scoresByName[nm]) scoresByName[nm]=[];
+      scoresByName[nm].push(pts);
+      allScores.push(pts);
+    }
+  }
+  var histGroupMean = allScores.length ? allScores.reduce(function(a,b){return a+b;},0)/allScores.length : 0;
+  var Kh=15; // quantos jogos históricos até confiar mais na média própria do que na do grupo
+  var priorMean={};
+  for(var nm2 in scoresByName){
+    var sc=scoresByName[nm2];
+    var ownHistMean=sc.reduce(function(a,b){return a+b;},0)/sc.length;
+    var wHist=sc.length/(sc.length+Kh);
+    priorMean[nm2]=wHist*ownHistMean + (1-wHist)*histGroupMean;
+  }
+  return {priorMean:priorMean, histGroupMean:histGroupMean};
+}
+function ewma(scores, alpha){
+  if(scores.length===0) return null;
+  var v=scores[0], i;
+  for(i=1;i<scores.length;i++) v=alpha*scores[i]+(1-alpha)*v;
+  return v;
+}
+function wilsonCI(wins, n){
+  if(n===0) return {low:0, high:0};
+  var z=1.96, phat=wins/n;
+  var denom=1+z*z/n;
+  var center=(phat + z*z/(2*n))/denom;
+  var margin=z*Math.sqrt(phat*(1-phat)/n + z*z/(4*n*n))/denom;
+  return {low:Math.max(0,center-margin), high:Math.min(1,center+margin)};
+}
+function drawFullRanking(names, strengthMap){
+  // sorteia a ETAPA INTEIRA de uma vez (quem sai em 1º, 2º...), com quem tem mais "for\u00e7a"
+  // saindo na frente com mais frequ\u00eancia \u2014 mas nunca garantido; \u00e9 sempre proporcional.
+  // preserva o jogo de soma zero: s\u00f3 existe um 1\u00ba lugar por etapa.
+  var pool=names.slice(), order=[], i;
+  while(pool.length>0){
+    var totalW=0;
+    for(i=0;i<pool.length;i++) totalW+=strengthMap[pool[i]];
+    var r=Math.random()*totalW, cum=0, pick=pool.length-1;
+    for(i=0;i<pool.length;i++){ cum+=strengthMap[pool[i]]; if(r<=cum){ pick=i; break; } }
+    order.push(pool[pick]);
+    pool.splice(pick,1);
+  }
+  return order;
+}
 function runTitleSimulation(){
   var arr=classification().filter(function(p){return p.games>0;});
   var remaining=Math.max(0, CONFIG.rounds - ETAPAS.length);
   var etapasSoFar=ETAPAS.length;
   var N=20000;
-  if(arr.length===0 || remaining===0){
-    STATE.winProb = arr.map(function(p){ return {name:p.name, pct: p===arr[0]?100:0}; });
+  var i;
+  if(arr.length===0){ STATE.winProb=[]; return; }
+  if(remaining===0){
+    STATE.winProb = arr.map(function(p,idx){ return {name:p.name, pct: idx===0?100:0, lowPct: idx===0?100:0, highPct: idx===0?100:0}; });
     return;
   }
-  // pool geral do grupo — usado tanto pra calcular a média geral quanto pra tirar a "forma" da variação real
-  var groupPool=[]; var i,j;
-  for(i=0;i<arr.length;i++) groupPool=groupPool.concat(arr[i].scores);
-  if(groupPool.length===0) groupPool=[0];
-  var groupMean=groupPool.reduce(function(a,b){return a+b;},0)/groupPool.length;
-  var maxPoints=0; for(var pk in CONFIG.pointsByPos){ if(CONFIG.pointsByPos[pk]>maxPoints) maxPoints=CONFIG.pointsByPos[pk]; }
-  var wins={}; for(i=0;i<arr.length;i++) wins[arr[i].name]=0;
+  var names=arr.map(function(p){return p.name;});
 
-  // histórico "completo" de cada jogador até agora: pontos reais + 0 pras etapas do grupo que ele não jogou
-  // (mesma regra usada na classificação real — ausência conta como pior resultado, não como se não existisse)
-  var pastFull={};
+  // 1) prior hist\u00f3rico \u2014 desempenho em TODAS as temporadas anteriores (2020 em diante)
+  var hp=computeHistoricalPriors();
+
+  // 2) "for\u00e7a" de cada jogador pro futuro: mistura entre o prior hist\u00f3rico (todas as temporadas
+  // passadas) e a forma RECENTE desta temporada (m\u00e9dia com mais peso pros \u00faltimos jogos, via EWMA).
+  // Quanto mais jogos j\u00e1 tem nesta temporada, mais confia na forma atual; no in\u00edcio, apoia mais
+  // no hist\u00f3rico de anos anteriores.
+  var Ks=6+remaining;
+  var strength={};
   for(i=0;i<arr.length;i++){
     var p=arr[i];
-    var missedSoFar=Math.max(0, etapasSoFar - p.games);
-    pastFull[p.name]=p.scores.concat(new Array(missedSoFar).fill(0));
-  }
-  // "regressão à média": a expectativa de cada um pro futuro é uma mistura entre a própria média
-  // (peso cresce com o nº de jogos — mais consistência demonstrada, mais confiança nela) e a média
-  // do grupo. Isso evita simplesmente replicar quem está bem/mal hoje — todo mundo tem espaço real
-  // pra melhorar ou piorar, mas quem já mostrou consistência pesa mais na expectativa.
-  var K=6+remaining; // "peso" da m\u00e9dia do grupo cresce quanto mais etapas ainda restam \u2014
-  // no in\u00edcio da temporada (muito restante), a amostra de cada um ainda diz pouco sobre o
-  // futuro, ent\u00e3o o modelo confia menos no que j\u00e1 foi feito; perto do fim, confia mais.
-  var shrunkMean={};
-  for(i=0;i<arr.length;i++){
-    var pm=arr[i];
-    var ownMean = pm.scores.length>0 ? pm.scores.reduce(function(a,b){return a+b;},0)/pm.scores.length : groupMean;
-    var w=pm.scores.length/(pm.scores.length+K);
-    shrunkMean[pm.name]=w*ownMean + (1-w)*groupMean;
+    var prior = hp.priorMean[p.name]!==undefined ? hp.priorMean[p.name] : hp.histGroupMean;
+    var recent=ewma(p.scores, 0.35);
+    if(recent===null) recent=prior;
+    var wSeason=p.games/(p.games+Ks);
+    var s=wSeason*recent + (1-wSeason)*prior;
+    if(s<0.3) s=0.3; // nunca zero — todo mundo mant\u00e9m alguma chance real em cada etapa
+    strength[p.name]=s;
   }
 
+  // hist\u00f3rico "completo" desta temporada (pontos reais + 0 pras etapas que faltou) — mesma regra
+  // da classifica\u00e7\u00e3o real: aus\u00eancia conta como pior resultado, n\u00e3o some do c\u00e1lculo.
+  var pastFull={}, penaltyMap={};
+  for(i=0;i<arr.length;i++){
+    var pp=arr[i];
+    var missedSoFar=Math.max(0, etapasSoFar - pp.games);
+    pastFull[pp.name]=pp.scores.concat(new Array(missedSoFar).fill(0));
+    penaltyMap[pp.name]=pp.penalty;
+  }
+
+  var wins={}; for(i=0;i<names.length;i++) wins[names[i]]=0;
+
   for(var sim=0; sim<N; sim++){
-    var bestName=null, bestTotal=-Infinity, tied=[];
-    for(i=0;i<arr.length;i++){
-      var p=arr[i];
-      var mean=shrunkMean[p.name];
-      var future=pastFull[p.name].slice();
-      for(j=0;j<remaining;j++){
-        // sorteia a "forma" da variação real (desvio de um resultado qualquer em rela\u00e7\u00e3o \u00e0 m\u00e9dia
-        // do grupo) e aplica em cima da expectativa pr\u00f3pria j\u00e1 regredida \u00e0 m\u00e9dia \u2014 assim o
-        // resultado sorteado tem chance real de ser bem melhor ou pior que a m\u00e9dia de qualquer um.
-        var residual=groupPool[Math.floor(Math.random()*groupPool.length)] - groupMean;
-        var score=Math.round(mean+residual);
-        if(score<0) score=0; else if(score>maxPoints) score=maxPoints;
-        future.push(score);
-      }
-      var sorted=future.slice().sort(function(a,b){return a-b;});
-      var disc=0;
-      if(future.length>CONFIG.discardWorst){ for(j=0;j<CONFIG.discardWorst;j++) disc+=sorted[j]; }
-      var finalTotal=future.reduce(function(a,b){return a+b;},0) - disc - p.penalty;
-      if(finalTotal>bestTotal){ bestTotal=finalTotal; tied=[p.name]; }
-      else if(finalTotal===bestTotal){ tied.push(p.name); }
+    var future={}; for(i=0;i<names.length;i++) future[names[i]]=pastFull[names[i]].slice();
+    for(var r=0;r<remaining;r++){
+      var order=drawFullRanking(names, strength);
+      for(var k=0;k<order.length;k++) future[order[k]].push(pointsForPos(k+1));
+    }
+    var bestTotal=-Infinity, tied=[];
+    for(i=0;i<names.length;i++){
+      var fut=future[names[i]];
+      var sorted=fut.slice().sort(function(a,b){return a-b;});
+      var disc=0, jj;
+      if(fut.length>CONFIG.discardWorst){ for(jj=0;jj<CONFIG.discardWorst;jj++) disc+=sorted[jj]; }
+      var finalTotal=fut.reduce(function(a,b){return a+b;},0) - disc - penaltyMap[names[i]];
+      if(finalTotal>bestTotal){ bestTotal=finalTotal; tied=[names[i]]; }
+      else if(finalTotal===bestTotal){ tied.push(names[i]); }
     }
     for(i=0;i<tied.length;i++) wins[tied[i]] += 1/tied.length;
   }
+
   var result=[];
-  for(i=0;i<arr.length;i++) result.push({name:arr[i].name, pct:Math.round(wins[arr[i].name]/N*1000)/10});
+  for(i=0;i<names.length;i++){
+    var ci=wilsonCI(wins[names[i]], N);
+    result.push({
+      name:names[i], pct:Math.round(wins[names[i]]/N*1000)/10,
+      lowPct:Math.round(ci.low*1000)/10, highPct:Math.round(ci.high*1000)/10
+    });
+  }
   result.sort(function(a,b){return b.pct-a.pct;});
   STATE.winProb=result;
 }
@@ -2166,7 +2230,7 @@ function viewPrevisoes(){
   h+='<div class="panel dark">';
   h+='<div class="eyebrow">Engajamento</div>';
   h+='<h2 style="color:var(--bone)">Chances de t\u00edtulo</h2>';
-  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada. A expectativa de cada um pro futuro combina a pr\u00f3pria consist\u00eancia demonstrada com a m\u00e9dia do grupo (regress\u00e3o \u00e0 m\u00e9dia, mais forte quanto mais etapas ainda restarem) \u2014 ningu\u00e9m fica preso ao que fez at\u00e9 aqui, mas quem j\u00e1 mostrou consist\u00eancia pesa mais na conta. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia \u2014 e "0%" significa que n\u00e3o aconteceu em nenhuma das simula\u00e7\u00f5es, n\u00e3o que seja imposs\u00edvel.</div>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada, sorteando a ETAPA inteira de uma vez (s\u00f3 existe um 1\u00ba lugar por rodada). A "for\u00e7a" de cada um combina o hist\u00f3rico de todas as temporadas desde 2020 com a forma recente desta (dando mais peso pros \u00faltimos jogos) \u2014 ningu\u00e9m fica preso ao que fez, mas consist\u00eancia real pesa. O n\u00famero pequeno ao lado \u00e9 a margem de incerteza da pr\u00f3pria simula\u00e7\u00e3o (n\u00e3o \u00e9 promessa, \u00e9 tend\u00eancia).</div>';
   if(arr.length===0){
     h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div>';
   } else {
@@ -2175,7 +2239,7 @@ function viewPrevisoes(){
       for(i=0;i<STATE.winProb.length;i++){
         var wp=STATE.winProb[i];
         var barColor = i===0 ? 'var(--brass)' : 'rgba(255,255,255,.25)';
-        h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+wp.name+'</span><span style="font-weight:800;color:'+(i===0?'var(--brass)':'#fff')+'">'+wp.pct+'%</span></div>';
+        h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+wp.name+'</span><span style="text-align:right"><span style="font-weight:800;color:'+(i===0?'var(--brass)':'#fff')+'">'+wp.pct+'%</span><br><span class="muted" style="font-size:10px">'+wp.lowPct+'\u2013'+wp.highPct+'%</span></span></div>';
       }
     } else {
       h+='<div class="muted">Clique no bot\u00e3o pra calcular.</div>';
