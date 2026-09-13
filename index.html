@@ -2044,6 +2044,7 @@ function viewAvulsas(){
 function runTitleSimulation(){
   var arr=classification().filter(function(p){return p.games>0;});
   var remaining=Math.max(0, CONFIG.rounds - ETAPAS.length);
+  var etapasSoFar=ETAPAS.length;
   var N=2500;
   if(arr.length===0 || remaining===0){
     STATE.winProb = arr.map(function(p){ return {name:p.name, pct: p===arr[0]?100:0}; });
@@ -2056,12 +2057,21 @@ function runTitleSimulation(){
   if(groupPool.length===0) groupPool=[0];
   var wins={}; for(i=0;i<arr.length;i++) wins[arr[i].name]=0;
 
+  // histórico "completo" de cada jogador até agora: pontos reais + 0 pras etapas do grupo que ele não jogou
+  // (mesma regra usada na classificação real — ausência conta como pior resultado, não como se não existisse)
+  var pastFull={};
+  for(i=0;i<arr.length;i++){
+    var p=arr[i];
+    var missedSoFar=Math.max(0, etapasSoFar - p.games);
+    pastFull[p.name]=p.scores.concat(new Array(missedSoFar).fill(0));
+  }
+
   for(var sim=0; sim<N; sim++){
     var bestName=null, bestTotal=-Infinity, tied=[];
     for(i=0;i<arr.length;i++){
       var p=arr[i];
       var pool = p.scores.length>=3 ? p.scores : groupPool;
-      var future=p.scores.slice();
+      var future=pastFull[p.name].slice();
       for(j=0;j<remaining;j++) future.push(pool[Math.floor(Math.random()*pool.length)]);
       var sorted=future.slice().sort(function(a,b){return a-b;});
       var disc=0;
@@ -2091,6 +2101,14 @@ function addSimEtapa(){
     if(v && v>0) res.push({name:arr[i].name, pos:v});
   }
   if(res.length===0){ alert('Preencha ao menos uma posi\u00e7\u00e3o.'); return; }
+  var seenPos={}, dupes=[];
+  for(i=0;i<res.length;i++){
+    if(seenPos[res[i].pos]){ dupes.push(res[i].pos); } else { seenPos[res[i].pos]=true; }
+  }
+  if(dupes.length>0){
+    alert('Duas pessoas n\u00e3o podem ficar na mesma posi\u00e7\u00e3o (repetida: '+dupes.join(', ')+'\u00ba). Ajuste antes de adicionar.');
+    return;
+  }
   SIM_ETAPAS.push({n:'sim', date:'', results:res});
   render();
 }
