@@ -1217,7 +1217,7 @@ function whatsappText(etapa){
    RENDER
    ============================================================ */
 var STATE={ tab:'class', isAdmin:false, importPreview:null, highlight:null, histSeasons:null, winProb:null };
-var SIM_ETAPAS=[]; // simulador "e se..." — só na memória deste navegador, nunca salvo
+var SIM_GRID=[]; // simulador "e se..." (grade completa) — só na memória deste navegador, nunca salvo
 var CLASS_USING_BRUTO=true; // atualizado por classification() a cada chamada
 var TABS=[
   {id:'class', label:'Classifica\u00e7\u00e3o'},
@@ -2070,7 +2070,9 @@ function runTitleSimulation(){
   // (peso cresce com o nº de jogos — mais consistência demonstrada, mais confiança nela) e a média
   // do grupo. Isso evita simplesmente replicar quem está bem/mal hoje — todo mundo tem espaço real
   // pra melhorar ou piorar, mas quem já mostrou consistência pesa mais na expectativa.
-  var K=6; // "peso" da média do grupo, em nº equivalente de jogos
+  var K=6+remaining; // "peso" da m\u00e9dia do grupo cresce quanto mais etapas ainda restam \u2014
+  // no in\u00edcio da temporada (muito restante), a amostra de cada um ainda diz pouco sobre o
+  // futuro, ent\u00e3o o modelo confia menos no que j\u00e1 foi feito; perto do fim, confia mais.
   var shrunkMean={};
   for(i=0;i<arr.length;i++){
     var pm=arr[i];
@@ -2112,36 +2114,47 @@ function calcTitleChances(){
   runTitleSimulation();
   render();
 }
-function addSimEtapa(){
+function onSimGridInput(playerIdx, colIdx, val, playerName){
+  if(!SIM_GRID[colIdx]) SIM_GRID[colIdx]={};
+  var v=parseInt(val,10);
+  if(v && v>0) SIM_GRID[colIdx][playerName]=v; else delete SIM_GRID[colIdx][playerName];
+  var out=document.getElementById('simResultsArea');
+  if(out) out.innerHTML=renderSimResults();
+}
+function clearSimGrid(){
+  if(!confirm('Limpar toda a simula\u00e7\u00e3o?')) return;
+  SIM_GRID=[];
+  render();
+}
+function renderSimResults(){
   var arr=classification().filter(function(p){return p.games>0;});
-  var res=[], i;
-  for(i=0;i<arr.length;i++){
-    var el=document.getElementById('simPos_'+i);
-    if(!el) continue;
-    var v=parseInt(el.value,10);
-    if(v && v>0) res.push({name:arr[i].name, pos:v});
+  var simEtapas=[], c;
+  for(c=0;c<SIM_GRID.length;c++){
+    var col=SIM_GRID[c]||{}, res=[], nm;
+    for(nm in col) res.push({name:nm, pos:col[nm]});
+    if(res.length>0) simEtapas.push({n:'sim'+c, date:'', results:res});
   }
-  if(res.length===0){ alert('Preencha ao menos uma posi\u00e7\u00e3o.'); return; }
-  var seenPos={}, dupes=[];
-  for(i=0;i<res.length;i++){
-    if(seenPos[res[i].pos]){ dupes.push(res[i].pos); } else { seenPos[res[i].pos]=true; }
+  if(simEtapas.length===0) return '<div class="muted">Preencha alguma posi\u00e7\u00e3o na grade acima pra ver o resultado.</div>';
+
+  // aviso (sem travar a digita\u00e7\u00e3o) se alguma etapa hipot\u00e9tica tiver posi\u00e7\u00e3o repetida entre jogadores
+  var warn=[];
+  simEtapas.forEach(function(se,idx){
+    var seen={}, dup=false;
+    se.results.forEach(function(r){ if(seen[r.pos]) dup=true; seen[r.pos]=true; });
+    if(dup) warn.push(idx+1);
+  });
+
+  var simSrc=ETAPAS.concat(simEtapas);
+  var simArr=classification(undefined, simSrc).filter(function(p){return p.games>0;});
+  simArr.sort(function(a,b){ return b.sortScore-a.sortScore || b.ganho-a.ganho; });
+  var h='';
+  if(warn.length>0) h+='<div class="muted" style="color:var(--red);margin-bottom:8px">\u26a0\ufe0f Etapa'+(warn.length>1?'s':'')+' simulada'+(warn.length>1?'s':'')+' '+warn.join(', ')+' t'+(warn.length>1?'êm':'em')+' duas pessoas na mesma posi\u00e7\u00e3o \u2014 confira antes de confiar no resultado.</div>';
+  h+='<div class="tblwrap"><table><thead><tr><th>#</th><th>Jogador</th><th class="ctr">Pontos</th></tr></thead><tbody>';
+  for(var i=0;i<simArr.length;i++){
+    h+='<tr><td>'+(i+1)+'\u00ba</td><td>'+simArr[i].name+'</td><td class="ctr"><b>'+(CLASS_USING_BRUTO?(simArr[i].gross-simArr[i].penalty):simArr[i].total)+'</b></td></tr>';
   }
-  if(dupes.length>0){
-    alert('Duas pessoas n\u00e3o podem ficar na mesma posi\u00e7\u00e3o (repetida: '+dupes.join(', ')+'\u00ba). Ajuste antes de adicionar.');
-    return;
-  }
-  SIM_ETAPAS.push({n:'sim', date:'', results:res});
-  render();
-}
-function removeSimEtapa(idx){
-  SIM_ETAPAS.splice(idx,1);
-  render();
-}
-function clearSimEtapas(){
-  if(SIM_ETAPAS.length===0) return;
-  if(!confirm('Limpar todas as etapas simuladas?')) return;
-  SIM_ETAPAS=[];
-  render();
+  h+='</tbody></table></div>';
+  return h;
 }
 function viewPrevisoes(){
   var h='', i;
@@ -2150,7 +2163,7 @@ function viewPrevisoes(){
   h+='<div class="panel dark">';
   h+='<div class="eyebrow">Engajamento</div>';
   h+='<h2 style="color:var(--bone)">Chances de t\u00edtulo</h2>';
-  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada. A expectativa de cada um pro futuro combina a pr\u00f3pria consist\u00eancia demonstrada com a m\u00e9dia do grupo (regress\u00e3o \u00e0 m\u00e9dia) \u2014 ningu\u00e9m fica preso ao que fez at\u00e9 aqui, mas quem j\u00e1 mostrou consist\u00eancia pesa mais na conta. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia \u2014 e "0%" significa que n\u00e3o aconteceu em nenhuma das simula\u00e7\u00f5es, n\u00e3o que seja imposs\u00edvel.</div>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada. A expectativa de cada um pro futuro combina a pr\u00f3pria consist\u00eancia demonstrada com a m\u00e9dia do grupo (regress\u00e3o \u00e0 m\u00e9dia, mais forte quanto mais etapas ainda restarem) \u2014 ningu\u00e9m fica preso ao que fez at\u00e9 aqui, mas quem j\u00e1 mostrou consist\u00eancia pesa mais na conta. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia \u2014 e "0%" significa que n\u00e3o aconteceu em nenhuma das simula\u00e7\u00f5es, n\u00e3o que seja imposs\u00edvel.</div>';
   if(arr.length===0){
     h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div>';
   } else {
@@ -2168,39 +2181,34 @@ function viewPrevisoes(){
   h+='</div>';
 
   h+='<div class="panel"><div class="eyebrow">Simulador pessoal</div><h2>E se...?</h2>';
-  h+='<div class="muted" style="margin:-8px 0 12px">Monte cen\u00e1rios de etapas futuras e veja como a classifica\u00e7\u00e3o mudaria. <b>Isso fica s\u00f3 no seu navegador</b> \u2014 ningu\u00e9m mais v\u00ea, e some se voc\u00ea recarregar a p\u00e1gina.</div>';
+  h+='<div class="muted" style="margin:-8px 0 12px">Preencha a posi\u00e7\u00e3o de cada jogador em cada etapa que falta \u2014 a classifica\u00e7\u00e3o simulada atualiza sozinha embaixo, a cada preenchimento. <b>Isso fica s\u00f3 no seu navegador</b> \u2014 ningu\u00e9m mais v\u00ea, e some se voc\u00ea recarregar a p\u00e1gina.</div>';
   if(arr.length===0){
     h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div></div>';
     return h;
   }
-  h+='<div class="eyebrow" style="margin-top:4px">Etapa hipot\u00e9tica \u2014 posi\u00e7\u00e3o de cada um</div>';
-  h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="ctr">Posi\u00e7\u00e3o</th></tr></thead><tbody>';
+  var remaining=Math.max(0, CONFIG.rounds - ETAPAS.length);
+  if(remaining===0){
+    h+='<div class="empty">A temporada j\u00e1 completou todas as '+CONFIG.rounds+' etapas previstas.</div></div>';
+    return h;
+  }
+  if(SIM_GRID.length!==remaining) SIM_GRID=new Array(remaining);
+  h+='<div class="row-flex" style="margin-bottom:10px"><button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" onclick="clearSimGrid()">Limpar simula\u00e7\u00e3o</button></div>';
+  h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th>';
+  var c;
+  for(c=0;c<remaining;c++) h+='<th class="ctr">Etapa '+(ETAPAS.length+c+1)+'</th>';
+  h+='</tr></thead><tbody>';
   for(i=0;i<arr.length;i++){
-    h+='<tr><td>'+arr[i].name+'</td><td class="ctr"><input type="number" min="1" id="simPos_'+i+'" style="width:64px;text-align:center" placeholder="\u2014"></td></tr>';
+    h+='<tr><td>'+arr[i].name+'</td>';
+    for(c=0;c<remaining;c++){
+      var curVal=(SIM_GRID[c] && SIM_GRID[c][arr[i].name]) ? SIM_GRID[c][arr[i].name] : '';
+      h+='<td class="ctr"><input type="number" min="1" value="'+curVal+'" style="width:52px;text-align:center" placeholder="\u2014" oninput="onSimGridInput('+i+','+c+',this.value,\''+arr[i].name.replace(/'/g,"\\'")+'\')"></td>';
+    }
+    h+='</tr>';
   }
   h+='</tbody></table></div>';
-  h+='<div class="row-flex" style="margin-top:10px"><button class="btn ghost sm" onclick="addSimEtapa()">+ Adicionar etapa simulada</button>';
-  if(SIM_ETAPAS.length>0) h+='<button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" onclick="clearSimEtapas()">Limpar simula\u00e7\u00e3o</button>';
-  h+='</div>';
 
-  if(SIM_ETAPAS.length>0){
-    h+='<div class="eyebrow" style="margin-top:16px">Etapas simuladas adicionadas ('+SIM_ETAPAS.length+')</div>';
-    for(i=0;i<SIM_ETAPAS.length;i++){
-      var se=SIM_ETAPAS[i];
-      var desc=se.results.slice().sort(function(a,b){return a.pos-b.pos;}).map(function(r){return r.pos+'\u00ba '+r.name;}).join(' \u00b7 ');
-      h+='<div class="pill-line"><span class="muted">'+desc+'</span><span style="cursor:pointer;color:var(--red)" onclick="removeSimEtapa('+i+')">remover</span></div>';
-    }
-
-    var simSrc=ETAPAS.concat(SIM_ETAPAS);
-    var simArr=classification(undefined, simSrc).filter(function(p){return p.games>0;});
-    simArr.sort(function(a,b){ return b.sortScore-a.sortScore || b.ganho-a.ganho; });
-    h+='<div class="eyebrow" style="margin-top:16px">Classifica\u00e7\u00e3o simulada</div>';
-    h+='<div class="tblwrap"><table><thead><tr><th>#</th><th>Jogador</th><th class="ctr">Pontos</th></tr></thead><tbody>';
-    for(i=0;i<simArr.length;i++){
-      h+='<tr><td>'+(i+1)+'\u00ba</td><td>'+simArr[i].name+'</td><td class="ctr"><b>'+(CLASS_USING_BRUTO?(simArr[i].gross-simArr[i].penalty):simArr[i].total)+'</b></td></tr>';
-    }
-    h+='</tbody></table></div>';
-  }
+  h+='<div class="eyebrow" style="margin-top:16px">Classifica\u00e7\u00e3o simulada</div>';
+  h+='<div id="simResultsArea">'+renderSimResults()+'</div>';
   h+='</div>';
   return h;
 }
