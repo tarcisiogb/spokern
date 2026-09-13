@@ -2164,11 +2164,23 @@ function runTitleSimulation(){
   }
 
   var result=[];
+  var curPts={}; for(i=0;i<arr.length;i++) curPts[arr[i].name]=arr[i].total;
+  // poker tem um componente real de sorte — o quanto a simula\u00e7\u00e3o "acredita" no resultado dela
+  // mesma deve crescer conforme a temporada avan\u00e7a. No come\u00e7o (poucas rodadas reais disputadas),
+  // mistura o resultado simulado com uma distribui\u00e7\u00e3o neutra (todo mundo igual); perto do fim,
+  // a simula\u00e7\u00e3o passa a valer quase 100%, porque sobra pouca coisa pra acontecer mesmo.
+  var seasonFrac=Math.min(1, etapasSoFar/CONFIG.rounds);
+  var uniform=100/names.length;
   for(i=0;i<names.length;i++){
     var ci=wilsonCI(wins[names[i]], N);
+    var rawPct=Math.round(wins[names[i]]/N*1000)/10;
+    var rawLow=Math.round(ci.low*1000)/10, rawHigh=Math.round(ci.high*1000)/10;
     result.push({
-      name:names[i], pct:Math.round(wins[names[i]]/N*1000)/10,
-      lowPct:Math.round(ci.low*1000)/10, highPct:Math.round(ci.high*1000)/10
+      name:names[i],
+      pct:Math.round((seasonFrac*rawPct + (1-seasonFrac)*uniform)*10)/10,
+      lowPct:Math.round((seasonFrac*rawLow + (1-seasonFrac)*uniform)*10)/10,
+      highPct:Math.round((seasonFrac*rawHigh + (1-seasonFrac)*uniform)*10)/10,
+      curPts:curPts[names[i]]
     });
   }
   result.sort(function(a,b){return b.pct-a.pct;});
@@ -2230,7 +2242,7 @@ function viewPrevisoes(){
   h+='<div class="panel dark">';
   h+='<div class="eyebrow">Engajamento</div>';
   h+='<h2 style="color:var(--bone)">Chances de t\u00edtulo</h2>';
-  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada, sorteando a ETAPA inteira de uma vez (s\u00f3 existe um 1\u00ba lugar por rodada). A "for\u00e7a" de cada um combina o hist\u00f3rico de todas as temporadas desde 2020 com a forma recente desta (dando mais peso pros \u00faltimos jogos) \u2014 ningu\u00e9m fica preso ao que fez, mas consist\u00eancia real pesa. O n\u00famero pequeno ao lado \u00e9 a margem de incerteza da pr\u00f3pria simula\u00e7\u00e3o (n\u00e3o \u00e9 promessa, \u00e9 tend\u00eancia).</div>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada, sorteando a ETAPA inteira de uma vez (s\u00f3 existe um 1\u00ba lugar por rodada). A "for\u00e7a" de cada um combina o hist\u00f3rico de todas as temporadas desde 2020 com a forma recente desta (dando mais peso pros \u00faltimos jogos). Al\u00e9m disso, como p\u00f3quer tem sorte de verdade, o resultado final \u00e9 misturado com uma chance igual pra todos, numa propor\u00e7\u00e3o de quantas rodadas j\u00e1 rolaram \u2014 no come\u00e7o da temporada a simula\u00e7\u00e3o fica mais humilde, mesmo que algu\u00e9m j\u00e1 esteja na frente; perto do fim, ela passa a valer quase por completo. O n\u00famero pequeno ao lado \u00e9 a margem de incerteza (n\u00e3o \u00e9 promessa, \u00e9 tend\u00eancia).</div>';
   if(arr.length===0){
     h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div>';
   } else {
@@ -2239,7 +2251,7 @@ function viewPrevisoes(){
       for(i=0;i<STATE.winProb.length;i++){
         var wp=STATE.winProb[i];
         var barColor = i===0 ? 'var(--brass)' : 'rgba(255,255,255,.25)';
-        h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+wp.name+'</span><span style="text-align:right"><span style="font-weight:800;color:'+(i===0?'var(--brass)':'#fff')+'">'+wp.pct+'%</span><br><span class="muted" style="font-size:10px">'+wp.lowPct+'\u2013'+wp.highPct+'%</span></span></div>';
+        h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+wp.name+' <span class="muted" style="font-size:11px">('+wp.curPts+' pts hoje)</span></span><span style="text-align:right"><span style="font-weight:800;color:'+(i===0?'var(--brass)':'#fff')+'">'+wp.pct+'%</span><br><span class="muted" style="font-size:10px">'+wp.lowPct+'\u2013'+wp.highPct+'%</span></span></div>';
       }
     } else {
       h+='<div class="muted">Clique no bot\u00e3o pra calcular.</div>';
