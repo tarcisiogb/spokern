@@ -1216,7 +1216,8 @@ function whatsappText(etapa){
 /* ============================================================
    RENDER
    ============================================================ */
-var STATE={ tab:'class', isAdmin:false, importPreview:null, highlight:null, histSeasons:null };
+var STATE={ tab:'class', isAdmin:false, importPreview:null, highlight:null, histSeasons:null, winProb:null };
+var SIM_ETAPAS=[]; // simulador "e se..." — só na memória deste navegador, nunca salvo
 var CLASS_USING_BRUTO=true; // atualizado por classification() a cada chamada
 var TABS=[
   {id:'class', label:'Classifica\u00e7\u00e3o'},
@@ -1224,6 +1225,7 @@ var TABS=[
   {id:'tesouraria', label:'Tesouraria'},
   {id:'pagamentos', label:'Pagamentos'},
   {id:'avulsas', label:'Avulsas'},
+  {id:'previsoes', label:'Previs\u00f5es'},
   {id:'regras', label:'Regras'},
   {id:'insights', label:'Curiosidades'},
   {id:'historico', label:'Hist\u00f3rico'}
@@ -1264,6 +1266,7 @@ function render(){
   else if(STATE.tab==='tesouraria') h=viewTesouraria();
   else if(STATE.tab==='pagamentos') h=viewPagamentos();
   else if(STATE.tab==='avulsas') h=viewAvulsas();
+  else if(STATE.tab==='previsoes') h=viewPrevisoes();
   else if(STATE.tab==='regras') h=viewRegras();
   else if(STATE.tab==='insights') h=viewInsights();
   else if(STATE.tab==='historico') h=viewHistorico();
@@ -2035,6 +2038,134 @@ function viewAvulsas(){
   return h;
 }
 
+/* ============================================================
+   PREVISÕES — chances de título (simulação) + simulador pessoal
+   ============================================================ */
+function runTitleSimulation(){
+  var arr=classification().filter(function(p){return p.games>0;});
+  var remaining=Math.max(0, CONFIG.rounds - ETAPAS.length);
+  var N=2500;
+  if(arr.length===0 || remaining===0){
+    STATE.winProb = arr.map(function(p){ return {name:p.name, pct: p===arr[0]?100:0}; });
+    return;
+  }
+  // pool de pontos possíveis pra cada jogador: os próprios resultados desta temporada;
+  // quem tem poucos jogos ainda usa também o pool geral do grupo, pra não sortear sempre o mesmo valor.
+  var groupPool=[]; var i,j;
+  for(i=0;i<arr.length;i++) groupPool=groupPool.concat(arr[i].scores);
+  if(groupPool.length===0) groupPool=[0];
+  var wins={}; for(i=0;i<arr.length;i++) wins[arr[i].name]=0;
+
+  for(var sim=0; sim<N; sim++){
+    var bestName=null, bestTotal=-Infinity, tied=[];
+    for(i=0;i<arr.length;i++){
+      var p=arr[i];
+      var pool = p.scores.length>=3 ? p.scores : groupPool;
+      var future=p.scores.slice();
+      for(j=0;j<remaining;j++) future.push(pool[Math.floor(Math.random()*pool.length)]);
+      var sorted=future.slice().sort(function(a,b){return a-b;});
+      var disc=0;
+      if(future.length>CONFIG.discardWorst){ for(j=0;j<CONFIG.discardWorst;j++) disc+=sorted[j]; }
+      var finalTotal=future.reduce(function(a,b){return a+b;},0) - disc - p.penalty;
+      if(finalTotal>bestTotal){ bestTotal=finalTotal; tied=[p.name]; }
+      else if(finalTotal===bestTotal){ tied.push(p.name); }
+    }
+    for(i=0;i<tied.length;i++) wins[tied[i]] += 1/tied.length;
+  }
+  var result=[];
+  for(i=0;i<arr.length;i++) result.push({name:arr[i].name, pct:Math.round(wins[arr[i].name]/N*1000)/10});
+  result.sort(function(a,b){return b.pct-a.pct;});
+  STATE.winProb=result;
+}
+function calcTitleChances(){
+  runTitleSimulation();
+  render();
+}
+function addSimEtapa(){
+  var arr=classification().filter(function(p){return p.games>0;});
+  var res=[], i;
+  for(i=0;i<arr.length;i++){
+    var el=document.getElementById('simPos_'+i);
+    if(!el) continue;
+    var v=parseInt(el.value,10);
+    if(v && v>0) res.push({name:arr[i].name, pos:v});
+  }
+  if(res.length===0){ alert('Preencha ao menos uma posi\u00e7\u00e3o.'); return; }
+  SIM_ETAPAS.push({n:'sim', date:'', results:res});
+  render();
+}
+function removeSimEtapa(idx){
+  SIM_ETAPAS.splice(idx,1);
+  render();
+}
+function clearSimEtapas(){
+  if(SIM_ETAPAS.length===0) return;
+  if(!confirm('Limpar todas as etapas simuladas?')) return;
+  SIM_ETAPAS=[];
+  render();
+}
+function viewPrevisoes(){
+  var h='', i;
+  var arr=classification().filter(function(p){return p.games>0;});
+
+  h+='<div class="panel dark">';
+  h+='<div class="eyebrow">Engajamento</div>';
+  h+='<h2 style="color:var(--bone)">Chances de t\u00edtulo</h2>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada, sorteando resultados futuros com base no que cada um j\u00e1 fez at\u00e9 aqui. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia.</div>';
+  if(arr.length===0){
+    h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div>';
+  } else {
+    h+='<div class="row-flex" style="margin-bottom:12px"><button class="btn" onclick="calcTitleChances()">&#127922; Calcular chances de t\u00edtulo</button></div>';
+    if(STATE.winProb){
+      for(i=0;i<STATE.winProb.length;i++){
+        var wp=STATE.winProb[i];
+        var barColor = i===0 ? 'var(--brass)' : 'rgba(255,255,255,.25)';
+        h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+wp.name+'</span><span style="font-weight:800;color:'+(i===0?'var(--brass)':'#fff')+'">'+wp.pct+'%</span></div>';
+      }
+    } else {
+      h+='<div class="muted">Clique no bot\u00e3o pra calcular.</div>';
+    }
+  }
+  h+='</div>';
+
+  h+='<div class="panel"><div class="eyebrow">Simulador pessoal</div><h2>E se...?</h2>';
+  h+='<div class="muted" style="margin:-8px 0 12px">Monte cen\u00e1rios de etapas futuras e veja como a classifica\u00e7\u00e3o mudaria. <b>Isso fica s\u00f3 no seu navegador</b> \u2014 ningu\u00e9m mais v\u00ea, e some se voc\u00ea recarregar a p\u00e1gina.</div>';
+  if(arr.length===0){
+    h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div></div>';
+    return h;
+  }
+  h+='<div class="eyebrow" style="margin-top:4px">Etapa hipot\u00e9tica \u2014 posi\u00e7\u00e3o de cada um</div>';
+  h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="ctr">Posi\u00e7\u00e3o</th></tr></thead><tbody>';
+  for(i=0;i<arr.length;i++){
+    h+='<tr><td>'+arr[i].name+'</td><td class="ctr"><input type="number" min="1" id="simPos_'+i+'" style="width:64px;text-align:center" placeholder="\u2014"></td></tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<div class="row-flex" style="margin-top:10px"><button class="btn ghost sm" onclick="addSimEtapa()">+ Adicionar etapa simulada</button>';
+  if(SIM_ETAPAS.length>0) h+='<button class="btn ghost sm" style="border-color:var(--red);color:var(--red)" onclick="clearSimEtapas()">Limpar simula\u00e7\u00e3o</button>';
+  h+='</div>';
+
+  if(SIM_ETAPAS.length>0){
+    h+='<div class="eyebrow" style="margin-top:16px">Etapas simuladas adicionadas ('+SIM_ETAPAS.length+')</div>';
+    for(i=0;i<SIM_ETAPAS.length;i++){
+      var se=SIM_ETAPAS[i];
+      var desc=se.results.slice().sort(function(a,b){return a.pos-b.pos;}).map(function(r){return r.pos+'\u00ba '+r.name;}).join(' \u00b7 ');
+      h+='<div class="pill-line"><span class="muted">'+desc+'</span><span style="cursor:pointer;color:var(--red)" onclick="removeSimEtapa('+i+')">remover</span></div>';
+    }
+
+    var simSrc=ETAPAS.concat(SIM_ETAPAS);
+    var simArr=classification(undefined, simSrc).filter(function(p){return p.games>0;});
+    simArr.sort(function(a,b){ return b.sortScore-a.sortScore || b.ganho-a.ganho; });
+    h+='<div class="eyebrow" style="margin-top:16px">Classifica\u00e7\u00e3o simulada</div>';
+    h+='<div class="tblwrap"><table><thead><tr><th>#</th><th>Jogador</th><th class="ctr">Pontos</th></tr></thead><tbody>';
+    for(i=0;i<simArr.length;i++){
+      h+='<tr><td>'+(i+1)+'\u00ba</td><td>'+simArr[i].name+'</td><td class="ctr"><b>'+(CLASS_USING_BRUTO?(simArr[i].gross-simArr[i].penalty):simArr[i].total)+'</b></td></tr>';
+    }
+    h+='</tbody></table></div>';
+  }
+  h+='</div>';
+  return h;
+}
+
 /* ---- Regras ---- */
 function viewRegras(){
   var h='';
@@ -2311,15 +2442,31 @@ function viewHistorico(){
   }
   h+='</tbody></table></div></div>';
 
-  // ganho efetivo histórico (premiação x líquido)
-  var byNet=HIST_STATS.slice().sort(function(a,b){return b.net-a.net;});
+  // ganho efetivo histórico (premiação x líquido) + total combinado com a temporada atual
+  var curArrGanho=classification().filter(function(p){return p.games>0;});
+  var curGanhoMap={}; var ci; for(ci=0;ci<curArrGanho.length;ci++) curGanhoMap[curArrGanho[ci].name]=curArrGanho[ci].ganho;
+  var namesSet={}; var combined=[];
+  for(i=0;i<HIST_STATS.length;i++) namesSet[HIST_STATS[i].n]=true;
+  for(ci=0;ci<curArrGanho.length;ci++) namesSet[curArrGanho[ci].name]=true;
+  var nmKey; for(nmKey in namesSet){
+    var histRow=HIST_STATS.filter(function(x){return x.n===nmKey;})[0];
+    var histPrem=histRow?histRow.prem:0, histNet=histRow?histRow.net:0;
+    var curG=curGanhoMap[nmKey]!==undefined?curGanhoMap[nmKey]:0;
+    combined.push({n:nmKey, prem:histPrem, net:histNet, curG:curG, total:histNet+curG});
+  }
+  combined.sort(function(a,b){return b.total-a.total;});
   h+='<div class="panel"><div class="eyebrow">Bolso</div><h2>Ganho efetivo (all-time)</h2>';
-  h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="num">Premia\u00e7\u00f5es</th><th class="num">L\u00edquido</th></tr></thead><tbody>';
-  for(i=0;i<byNet.length;i++){
-    var g=byNet[i];
+  h+='<div class="muted" style="margin:-8px 0 10px">L\u00edquido = temporadas j\u00e1 fechadas. Total combinado = l\u00edquido histórico + o que j\u00e1 rendeu na temporada em andamento.</div>';
+  h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="num">Premia\u00e7\u00f5es</th><th class="num">L\u00edquido</th><th class="num">Nesta temporada</th><th class="num">Total combinado</th></tr></thead><tbody>';
+  for(i=0;i<combined.length;i++){
+    var g=combined[i];
     var col=g.net>=0?'color:#1f7a4d':'color:var(--red)';
     var sign=g.net>=0?'+':'';
-    h+='<tr><td><b>'+g.n+'</b></td><td class="num">'+money(g.prem)+'</td><td class="num" style="'+col+';font-weight:700">'+sign+money(g.net)+'</td></tr>';
+    var colCur=g.curG>=0?'color:#1f7a4d':'color:var(--red)';
+    var signCur=g.curG>=0?'+':'';
+    var colTot=g.total>=0?'color:#1f7a4d':'color:var(--red)';
+    var signTot=g.total>=0?'+':'';
+    h+='<tr><td><b>'+g.n+'</b></td><td class="num">'+money(g.prem)+'</td><td class="num" style="'+col+';font-weight:700">'+sign+money(g.net)+'</td><td class="num" style="'+colCur+'">'+signCur+money(g.curG)+'</td><td class="num" style="'+colTot+';font-weight:800">'+signTot+money(g.total)+'</td></tr>';
   }
   h+='</tbody></table></div>';
   h+='<div class="muted" style="margin-top:8px">Premia\u00e7\u00f5es = tudo que ganhou. L\u00edquido = j\u00e1 descontando todo o investimento em buy-ins ao longo dos anos &mdash; positivo = no lucro, negativo = no preju\u00edzo.</div></div>';
