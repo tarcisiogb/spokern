@@ -2114,10 +2114,13 @@ function calcTitleChances(){
   runTitleSimulation();
   render();
 }
-function onSimGridInput(playerIdx, colIdx, val, playerName){
+function adjustSimPos(colIdx, delta, playerName){
   if(!SIM_GRID[colIdx]) SIM_GRID[colIdx]={};
-  var v=parseInt(val,10);
-  if(v && v>0) SIM_GRID[colIdx][playerName]=v; else delete SIM_GRID[colIdx][playerName];
+  var cur=SIM_GRID[colIdx][playerName] || 0;
+  var next=cur+delta;
+  if(next<1) delete SIM_GRID[colIdx][playerName]; else SIM_GRID[colIdx][playerName]=next;
+  var span=document.getElementById('simVal_'+colIdx+'_'+playerName.replace(/[^a-zA-Z0-9]/g,''));
+  if(span) span.innerHTML = SIM_GRID[colIdx][playerName] ? (SIM_GRID[colIdx][playerName]+'\u00ba') : '\u2014';
   var out=document.getElementById('simResultsArea');
   if(out) out.innerHTML=renderSimResults();
 }
@@ -2199,9 +2202,15 @@ function viewPrevisoes(){
   h+='</tr></thead><tbody>';
   for(i=0;i<arr.length;i++){
     h+='<tr><td>'+arr[i].name+'</td>';
+    var safeName=arr[i].name.replace(/'/g,"\\'");
     for(c=0;c<remaining;c++){
-      var curVal=(SIM_GRID[c] && SIM_GRID[c][arr[i].name]) ? SIM_GRID[c][arr[i].name] : '';
-      h+='<td class="ctr"><input type="number" min="1" value="'+curVal+'" style="width:52px;text-align:center" placeholder="\u2014" oninput="onSimGridInput('+i+','+c+',this.value,\''+arr[i].name.replace(/'/g,"\\'")+'\')"></td>';
+      var curVal=(SIM_GRID[c] && SIM_GRID[c][arr[i].name]) ? SIM_GRID[c][arr[i].name] : null;
+      var cellSpanId='simVal_'+c+'_'+arr[i].name.replace(/[^a-zA-Z0-9]/g,'');
+      h+='<td class="ctr"><div style="display:flex;align-items:center;justify-content:center;gap:3px">';
+      h+='<button type="button" onclick="adjustSimPos('+c+',-1,\''+safeName+'\')" style="width:22px;height:22px;padding:0;border-radius:6px;border:1px solid var(--felt-line);background:var(--felt);color:var(--bone);font-weight:800;font-size:14px;line-height:1;cursor:pointer">\u2212</button>';
+      h+='<span id="'+cellSpanId+'" style="min-width:22px;display:inline-block;text-align:center;font-weight:700">'+(curVal?curVal+'\u00ba':'\u2014')+'</span>';
+      h+='<button type="button" onclick="adjustSimPos('+c+',1,\''+safeName+'\')" style="width:22px;height:22px;padding:0;border-radius:6px;border:1px solid var(--felt-line);background:var(--felt);color:var(--bone);font-weight:800;font-size:14px;line-height:1;cursor:pointer">+</button>';
+      h+='</div></td>';
     }
     h+='</tr>';
   }
