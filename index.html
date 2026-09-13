@@ -2045,16 +2045,17 @@ function runTitleSimulation(){
   var arr=classification().filter(function(p){return p.games>0;});
   var remaining=Math.max(0, CONFIG.rounds - ETAPAS.length);
   var etapasSoFar=ETAPAS.length;
-  var N=2500;
+  var N=20000;
   if(arr.length===0 || remaining===0){
     STATE.winProb = arr.map(function(p){ return {name:p.name, pct: p===arr[0]?100:0}; });
     return;
   }
-  // pool de pontos possíveis pra cada jogador: os próprios resultados desta temporada;
-  // quem tem poucos jogos ainda usa também o pool geral do grupo, pra não sortear sempre o mesmo valor.
+  // pool geral do grupo — usado tanto pra calcular a média geral quanto pra tirar a "forma" da variação real
   var groupPool=[]; var i,j;
   for(i=0;i<arr.length;i++) groupPool=groupPool.concat(arr[i].scores);
   if(groupPool.length===0) groupPool=[0];
+  var groupMean=groupPool.reduce(function(a,b){return a+b;},0)/groupPool.length;
+  var maxPoints=0; for(var pk in CONFIG.pointsByPos){ if(CONFIG.pointsByPos[pk]>maxPoints) maxPoints=CONFIG.pointsByPos[pk]; }
   var wins={}; for(i=0;i<arr.length;i++) wins[arr[i].name]=0;
 
   // histórico "completo" de cada jogador até agora: pontos reais + 0 pras etapas do grupo que ele não jogou
@@ -2065,14 +2066,34 @@ function runTitleSimulation(){
     var missedSoFar=Math.max(0, etapasSoFar - p.games);
     pastFull[p.name]=p.scores.concat(new Array(missedSoFar).fill(0));
   }
+  // "regressão à média": a expectativa de cada um pro futuro é uma mistura entre a própria média
+  // (peso cresce com o nº de jogos — mais consistência demonstrada, mais confiança nela) e a média
+  // do grupo. Isso evita simplesmente replicar quem está bem/mal hoje — todo mundo tem espaço real
+  // pra melhorar ou piorar, mas quem já mostrou consistência pesa mais na expectativa.
+  var K=6; // "peso" da média do grupo, em nº equivalente de jogos
+  var shrunkMean={};
+  for(i=0;i<arr.length;i++){
+    var pm=arr[i];
+    var ownMean = pm.scores.length>0 ? pm.scores.reduce(function(a,b){return a+b;},0)/pm.scores.length : groupMean;
+    var w=pm.scores.length/(pm.scores.length+K);
+    shrunkMean[pm.name]=w*ownMean + (1-w)*groupMean;
+  }
 
   for(var sim=0; sim<N; sim++){
     var bestName=null, bestTotal=-Infinity, tied=[];
     for(i=0;i<arr.length;i++){
       var p=arr[i];
-      var pool = p.scores.length>=3 ? p.scores : groupPool;
+      var mean=shrunkMean[p.name];
       var future=pastFull[p.name].slice();
-      for(j=0;j<remaining;j++) future.push(pool[Math.floor(Math.random()*pool.length)]);
+      for(j=0;j<remaining;j++){
+        // sorteia a "forma" da variação real (desvio de um resultado qualquer em rela\u00e7\u00e3o \u00e0 m\u00e9dia
+        // do grupo) e aplica em cima da expectativa pr\u00f3pria j\u00e1 regredida \u00e0 m\u00e9dia \u2014 assim o
+        // resultado sorteado tem chance real de ser bem melhor ou pior que a m\u00e9dia de qualquer um.
+        var residual=groupPool[Math.floor(Math.random()*groupPool.length)] - groupMean;
+        var score=Math.round(mean+residual);
+        if(score<0) score=0; else if(score>maxPoints) score=maxPoints;
+        future.push(score);
+      }
       var sorted=future.slice().sort(function(a,b){return a-b;});
       var disc=0;
       if(future.length>CONFIG.discardWorst){ for(j=0;j<CONFIG.discardWorst;j++) disc+=sorted[j]; }
@@ -2129,7 +2150,7 @@ function viewPrevisoes(){
   h+='<div class="panel dark">';
   h+='<div class="eyebrow">Engajamento</div>';
   h+='<h2 style="color:var(--bone)">Chances de t\u00edtulo</h2>';
-  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada, sorteando resultados futuros com base no que cada um j\u00e1 fez at\u00e9 aqui. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia.</div>';
+  h+='<div class="muted" style="margin:-8px 0 10px">Simula milhares de jeitos diferentes de terminar a temporada. A expectativa de cada um pro futuro combina a pr\u00f3pria consist\u00eancia demonstrada com a m\u00e9dia do grupo (regress\u00e3o \u00e0 m\u00e9dia) \u2014 ningu\u00e9m fica preso ao que fez at\u00e9 aqui, mas quem j\u00e1 mostrou consist\u00eancia pesa mais na conta. N\u00e3o \u00e9 uma promessa, \u00e9 s\u00f3 uma ideia de tend\u00eancia \u2014 e "0%" significa que n\u00e3o aconteceu em nenhuma das simula\u00e7\u00f5es, n\u00e3o que seja imposs\u00edvel.</div>';
   if(arr.length===0){
     h+='<div class="empty">Sem etapas lan\u00e7adas ainda.</div>';
   } else {
