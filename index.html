@@ -1074,7 +1074,6 @@ function classification(limit, srcEtapas){
   // mínimo de etapas disputadas no total — não depende de jogadores específicos completarem uma
   // marca individual (o que poderia nunca acontecer com jogadores ocasionais). Até lá, ordena
   // pela pontuação bruta (menos punição) — mas o "definitivo" já fica visível pra todos.
-  var SEASON_MATURITY_ETAPAS=8;
   var allReached6 = LN>=SEASON_MATURITY_ETAPAS;
   for(k=0;k<arr.length;k++){
     arr[k].sortScore = allReached6 ? arr[k].total : (arr[k].gross - arr[k].penalty);
@@ -1220,6 +1219,7 @@ function whatsappText(etapa){
 var STATE={ tab:'class', isAdmin:false, importPreview:null, highlight:null, histSeasons:null, winProb:null };
 var SIM_GRID=[]; // simulador "e se..." (grade completa) — só na memória deste navegador, nunca salvo
 var CLASS_USING_BRUTO=true; // atualizado por classification() a cada chamada
+var SEASON_MATURITY_ETAPAS=8; // a partir dessa etapa, ranking/gráficos passam a usar a pontuação definitiva
 var TABS=[
   {id:'class', label:'Classifica\u00e7\u00e3o'},
   {id:'graficos', label:'Gr\u00e1ficos'},
@@ -1518,8 +1518,16 @@ function buildEvolucaoPoster(idx){
   h+='</tr></thead><tbody>';
   for(i=0;i<arr.length;i++){
     var p=arr[i];
-    var sorted=p.scores.slice().sort(function(a,b){return a-b;});
-    var worst=sorted.slice(0,3);
+    // 3 piores exatamente como a classificação os considera: resultados reais + um 0 pra cada etapa
+    // que o grupo jogou e a pessoa faltou (marcado com * na tela). Assim a soma das 3 colunas
+    // sempre bate com a coluna "3 piores (total)".
+    var worstItems=p.scores.map(function(v){ return {v:v, absent:false}; });
+    if(ETAPAS.length>CONFIG.discardWorst){
+      var missedN=Math.max(0, ETAPAS.length-p.games), mi;
+      for(mi=0;mi<missedN;mi++) worstItems.push({v:0, absent:true});
+    }
+    worstItems.sort(function(a,b){ return a.v-b.v || (a.absent?1:0)-(b.absent?1:0); });
+    var worst=worstItems.slice(0,3);
     var ganhoStyle = p.ganho>=0 ? 'background:#d7ecd9;color:#1f7a4d' : 'background:#f6d9d5;color:#a8362a';
     var posB=prevRank[p.name], posA=i+1, mvHtml='<span style="color:#a8362a;font-weight:700">novo</span>';
     if(posB){
@@ -1550,9 +1558,10 @@ function buildEvolucaoPoster(idx){
     h+='<td class="ctr" style="'+ganhoStyle+'">'+(p.ganho>=0?'+':'')+money(p.ganho)+'</td>';
     h+='<td class="ctr" style="'+custoStyle+'">'+custoPt+'</td>';
     h+='<td class="ctr" style="'+pjStyle+'">'+ptsJogo+'</td>';
-    h+='<td class="ctr gsep">'+(worst[0]!==undefined?worst[0]:'&middot;')+'</td>';
-    h+='<td class="ctr">'+(worst[1]!==undefined?worst[1]:'&middot;')+'</td>';
-    h+='<td class="ctr">'+(worst[2]!==undefined?worst[2]:'&middot;')+'</td>';
+    function worstCell(w){ return w===undefined ? '&middot;' : (w.v+(w.absent?'*':'')); }
+    h+='<td class="ctr gsep">'+worstCell(worst[0])+'</td>';
+    h+='<td class="ctr">'+worstCell(worst[1])+'</td>';
+    h+='<td class="ctr">'+worstCell(worst[2])+'</td>';
     h+='<td class="ctr" style="color:var(--red);font-weight:800">'+p.discarded+'</td>';
     h+='<td class="ctr">'+(p.penalty>0?('-'+p.penalty):'&middot;')+'</td>';
     for(k=startCol;k<ETAPAS.length;k++){
@@ -1565,7 +1574,7 @@ function buildEvolucaoPoster(idx){
   }
   h+='</tbody></table></div>';
 
-  h+='<div class="cel-plan-footer">&#9824; &#9827; &#9829; &#9830; <b>SPokerN</b> &middot; Campeonato de poker entre amigos</div>';
+  h+='<div class="cel-plan-footer">* etapa em que a pessoa faltou (conta como 0 pro descarte) &nbsp;&middot;&nbsp; &#9824; &#9827; &#9829; &#9830; <b>SPokerN</b> &middot; Campeonato de poker entre amigos</div>';
   h+='</div></div></div>';
   return h;
 }
@@ -1746,14 +1755,14 @@ function viewClass(){
   var prev = ETAPAS.length>1 ? rankMap(ETAPAS.length-1) : {};
   var etapasDone=ETAPAS.length;
   var usingBruto=CLASS_USING_BRUTO;
-  var pendingEtapasFor6 = Math.max(0, 8-etapasDone);
+  var pendingEtapasFor6 = Math.max(0, SEASON_MATURITY_ETAPAS-etapasDone);
   var h='', i;
   h+='<div class="panel">';
   h+='<div class="eyebrow">Classifica\u00e7\u00e3o geral</div>';
   h+='<h2>Pontos corridos</h2>';
   h+='<div class="muted" style="margin:-8px 0 10px">'+etapasDone+' de '+CONFIG.rounds+' etapas &middot; definitivo = bruto \u2212 3 piores \u2212 atrasos</div>';
   if(usingBruto){
-    h+='<div class="demo-banner" style="text-align:left">&#9888;&#65039; Ordenando pela <b>pontua\u00e7\u00e3o bruta</b> (menos atrasos) \u2014 o desconto dos 3 piores s\u00f3 passa a valer pra posi\u00e7\u00e3o quando a temporada completar <b>8 etapas</b> ('+etapasDone+' de 8'+(pendingEtapasFor6>0?', faltam '+pendingEtapasFor6:'')+'). O valor definitivo de cada um j\u00e1 aparece abaixo do nome.</div>';
+    h+='<div class="demo-banner" style="text-align:left">&#9888;&#65039; Ordenando pela <b>pontua\u00e7\u00e3o bruta</b> (menos atrasos) \u2014 o desconto dos 3 piores s\u00f3 passa a valer pra posi\u00e7\u00e3o quando a temporada completar <b>'+SEASON_MATURITY_ETAPAS+' etapas</b> ('+etapasDone+' de '+SEASON_MATURITY_ETAPAS+''+(pendingEtapasFor6>0?', faltam '+pendingEtapasFor6:'')+'). O valor definitivo de cada um j\u00e1 aparece abaixo do nome.</div>';
   }
   if(arr.length===0){
     var tip = (typeof DEMO_MODE!=='undefined' && !DEMO_MODE) ? ' O organizador ainda n\u00e3o lan\u00e7ou/semeou nenhuma etapa no banco.' : '';
@@ -2340,6 +2349,23 @@ function viewRegras(){
 }
 
 /* ---- Insights ---- */
+function huRankingPanel(list, title, scopeNote){
+  // ranking completo de aproveitamento em heads-up: vit\u00f3rias \u00f7 vezes que chegou \u00e0 final (1\u00ba ou 2\u00ba)
+  var rows=list.slice().sort(function(a,b){ return b.pct-a.pct || b.p-a.p; });
+  var h='<div class="panel"><div class="eyebrow">Heads-up</div><h2>'+title+'</h2>';
+  h+='<div class="muted" style="margin:-8px 0 8px">Quando chega \u00e0 final (1\u00ba ou 2\u00ba lugar), quantas vezes leva a melhor. '+scopeNote+' Quem chegou poucas vezes ao heads-up tem % mais inst\u00e1vel \u2014 olhe o n\u00famero de finais ao lado.</div>';
+  if(rows.length===0){
+    h+='<div class="empty">Ainda n\u00e3o h\u00e1 heads-ups suficientes neste recorte.</div>';
+  } else {
+    var i;
+    for(i=0;i<rows.length;i++){
+      var r=rows[i];
+      h+='<div class="pill-line"><span><b>'+(i+1)+'\u00ba</b> &nbsp;'+r.n+'</span><span class="muted">'+r.pct+'% &middot; '+r.w+' de '+r.p+' '+pluralS(r.p,'final','finais')+'</span></div>';
+    }
+  }
+  h+='</div>';
+  return h;
+}
 function topEntry(obj){ var best=null,k; for(k in obj){ if(!best||obj[k]>best.val) best={name:k,val:obj[k]}; } return best; }
 function viewInsights(){
   var arr=classification().filter(function(p){return p.games>0;});
@@ -2406,6 +2432,7 @@ function viewInsights(){
   if(sWorstHu && sWorstHu!==sBestHu) h+='<div class="pill-line"><span>&#128517; Amarela na hora H</span><span><b>'+sWorstHu.n+'</b> <span class="muted">s\u00f3 '+sWorstHu.pct+'%</span></span></div>';
   if(sByPod) h+='<div class="pill-line"><span>&#127941; Mais p\u00f3dios na temporada</span><span><b>'+sByPod.n+'</b> <span class="muted">'+sByPod.pod+'</span></span></div>';
   h+='</div>';
+  h+=huRankingPanel(LS.huWinrate, 'Aproveitamento em heads-up (temporada)', 'S\u00f3 as etapas desta temporada.');
   } // fim do bloco "nesta temporada"
 
   // filtro compartilhado (afeta só o bloco histórico abaixo)
@@ -2458,6 +2485,9 @@ function viewInsights(){
   }
   if(bs) h+='<div class="muted" style="margin-top:10px">&#127775; <b>'+bs.n+'</b> chama aten\u00e7\u00e3o: entrou s\u00f3 no '+bs.sem+', bem depois de v\u00e1rios veteranos, e j\u00e1 tem um dos melhores aproveitamentos da hist\u00f3ria do campeonato.</div>';
   h+='</div>';
+
+  // aproveitamento em heads-up — ranking completo (respeita o filtro de temporadas)
+  h+=huRankingPanel(LIVE.huWinrate, 'Aproveitamento em heads-up'+(!isAllSel2?' \u00b7 filtrado':''), 'No per\u00edodo selecionado no filtro acima.');
 
   // rivalidades / heads-up históricos
   h+='<div class="panel"><div class="eyebrow">Rivalidades hist\u00f3ricas</div><h2>Confrontos de heads-up mais comuns</h2>';
@@ -2634,6 +2664,8 @@ var CHART_COLORS=['#3b6fd4','#c0392b','#556d36','#e0a423','#e0662b','#1aa39a',
   '#6bbf6b','#c95d5a','#5b7fe0','#7fbf3f','#c9a13b','#3fb0a8'];
 
 function seasonSeries(){
+  // valor de cada jogador após cada etapa = a MESMA pontuação que a Classificação usava naquele momento:
+  // bruto (menos atrasos) antes da maturidade da temporada, definitivo (sem os 3 piores) depois.
   var N=ETAPAS.length, i, j;
   var order=[], seen={};
   for(i=0;i<N;i++){
@@ -2643,18 +2675,14 @@ function seasonSeries(){
       if(!seen[nm]){ seen[nm]=true; order.push(nm); }
     }
   }
-  var running={}, cum={};
-  for(i=0;i<order.length;i++){ running[order[i]]=0; cum[order[i]]=[]; }
+  var cum={};
+  for(i=0;i<order.length;i++) cum[order[i]]=[];
   for(i=0;i<N;i++){
-    var got={};
-    var r=ETAPAS[i].results;
-    for(j=0;j<r.length;j++) got[r[j].name]=pointsForPos(r[j].pos);
-    for(j=0;j<order.length;j++){
-      var name=order[j];
-      running[name]+= got[name]?got[name]:0;
-      cum[name].push(running[name]);
-    }
+    var cl=classification(i+1), score={};
+    for(j=0;j<cl.length;j++) score[cl[j].name]=cl[j].sortScore;
+    for(j=0;j<order.length;j++) cum[order[j]].push(score[order[j]]!==undefined ? score[order[j]] : 0);
   }
+  classification(); // devolve os indicadores globais (CLASS_USING_BRUTO) ao estado da temporada inteira
   var series=[];
   for(i=0;i<order.length;i++){
     series.push({ name:order[i], color:CHART_COLORS[i%CHART_COLORS.length],
@@ -2665,12 +2693,18 @@ function seasonSeries(){
 }
 
 function bumpRanks(series,N){
+  // posição de cada um exatamente como a Classificação ordenava naquele momento (mesmo critério e desempate)
   var ranks={}, i, k;
   for(i=0;i<series.length;i++) ranks[series[i].name]=[];
   for(i=0;i<N;i++){
-    var arr=series.slice().sort(function(a,b){ return b.values[i]-a.values[i]; });
-    for(k=0;k<arr.length;k++) ranks[arr[k].name].push(k+1);
+    var cl=classification(i+1).filter(function(p){return p.games>0;}), pos={};
+    for(k=0;k<cl.length;k++) pos[cl[k].name]=k+1;
+    for(k=0;k<series.length;k++){
+      var nm=series[k].name;
+      ranks[nm].push(pos[nm]!==undefined ? pos[nm] : cl.length+1);
+    }
   }
+  classification(); // restaura o estado global da temporada inteira
   return ranks;
 }
 
@@ -2687,15 +2721,28 @@ function buildPointsChart(data){
   var series=data.series, N=data.N;
   var W=760, H=360, padL=36, padR=14, padT=14, padB=24;
   var plotW=W-padL-padR, plotH=H-padT-padB;
-  var maxY=0, i, j;
-  for(i=0;i<series.length;i++) if(series[i].final>maxY) maxY=series[i].final;
+  var maxY=0, minY=0, i, j;
+  for(i=0;i<series.length;i++){
+    for(j=0;j<series[i].values.length;j++){
+      if(series[i].values[j]>maxY) maxY=series[i].values[j];
+      if(series[i].values[j]<minY) minY=series[i].values[j];
+    }
+  }
   var step = maxY>240?100:(maxY>120?50:25);
   var top = Math.ceil(maxY/step)*step; if(top===0) top=step;
+  var base = minY<0 ? Math.floor(minY/step)*step : 0;
   function X(idx){ return padL + (N<=1?plotW/2:(idx*(plotW/(N-1)))); }
-  function Y(v){ return padT + plotH - (v/top)*plotH; }
+  function Y(v){ return padT + plotH - ((v-base)/(top-base))*plotH; }
   var svg='<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
   var t;
-  for(t=0;t<=top;t+=step){
+  // marcador da virada: a partir dessa etapa a pontuação passa a ser a definitiva (sem os 3 piores)
+  if(N>=SEASON_MATURITY_ETAPAS && N>1){
+    var xm = X(SEASON_MATURITY_ETAPAS-1) - (plotW/(N-1))/2;
+    svg+='<line x1="'+xm.toFixed(1)+'" y1="'+padT+'" x2="'+xm.toFixed(1)+'" y2="'+(padT+plotH)+'" stroke="#98a08e" stroke-width="1" stroke-dasharray="4 4"/>';
+    svg+='<text class="axis-lbl" x="'+(xm+5).toFixed(1)+'" y="'+(padT+10)+'">definitivo \u2192</text>';
+    svg+='<text class="axis-lbl" x="'+(xm-5).toFixed(1)+'" y="'+(padT+10)+'" text-anchor="end">\u2190 bruto</text>';
+  }
+  for(t=base;t<=top;t+=step){
     var y=Y(t);
     svg+='<line class="gridline" x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+y.toFixed(1)+'"/>';
     svg+='<text class="axis-lbl" x="'+(padL-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end">'+t+'</text>';
@@ -2762,6 +2809,11 @@ function viewGraficos(){
   h+='<div class="panel">';
   h+='<div class="eyebrow">Corrida de pontos</div><h2>Pontua\u00e7\u00e3o acumulada</h2>';
   h+='<div class="muted" style="margin:-8px 0 6px">Cada linha \u00e9 um jogador &middot; toque no nome para destacar</div>';
+  if(data.N>=SEASON_MATURITY_ETAPAS){
+    h+='<div class="muted" style="margin:0 0 6px">Mesma pontua\u00e7\u00e3o da Classifica\u00e7\u00e3o: <b>bruta</b> at\u00e9 a etapa '+(SEASON_MATURITY_ETAPAS-1)+' e <b>definitiva</b> (sem os 3 piores) da etapa '+SEASON_MATURITY_ETAPAS+' em diante \u2014 por isso as linhas d\u00e3o uma queda na virada: \u00e9 o descarte entrando na conta.</div>';
+  } else {
+    h+='<div class="muted" style="margin:0 0 6px">Pontua\u00e7\u00e3o <b>bruta</b> (menos atrasos). Na etapa '+SEASON_MATURITY_ETAPAS+' o gr\u00e1fico passa a mostrar a pontua\u00e7\u00e3o <b>definitiva</b> (sem os 3 piores), igual \u00e0 Classifica\u00e7\u00e3o.</div>';
+  }
   h+='<div class="chart-wrap">'+buildPointsChart(data)+'</div>';
   h+=legendHtml(data.series);
   h+='</div>';
