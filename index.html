@@ -165,6 +165,15 @@ nav.tabs button.admin-tab.on{background:var(--brass-deep);color:#fff;border-colo
   background:none;background-color:#f3f1ea;justify-content:flex-start;align-items:flex-start;
   width:100vw;max-width:none;padding:10px;overflow:hidden;height:100vh;min-height:0;
 }
+.cel-poster.ganho{background:none;background-color:#f3f1ea;width:max-content;min-width:100%;max-width:none;min-height:0;padding:10px 16px 18px;align-items:flex-start;overflow:visible}
+#celebrateOverlay .cel-poster.ganho{margin:0}
+.cel-poster.ganho .cel-close{background:rgba(0,0,0,.1);color:#111}
+.cel-poster.ganho .cel-hint{color:#555;text-shadow:none}
+.cel-poster.ganho .cel-share{background:#111;color:#fff}
+.cel-gtable{border-collapse:collapse;font-size:13px;color:#111;background:#fff}
+.cel-gtable th{background:#111;color:#fff;padding:8px 12px;font-size:11px;text-align:right;white-space:nowrap}
+.cel-gtable td{border-bottom:1px solid #e3e0d6}
+.cel-gtable tbody tr:nth-child(even){background:#faf8f2}
 .cel-poster.planilha .cel-close{background:rgba(0,0,0,.1);color:#111}
 .cel-poster.planilha .cel-hint{color:#555;text-shadow:none}
 #celPlanWrap{display:inline-block;width:max-content}
@@ -1620,6 +1629,41 @@ function buildCelebratePoster(){
   h+='</div></div>';
   return h;
 }
+function ganhoAllTimeRows(){
+  var i;
+  var curArrGanho=classification().filter(function(p){return p.games>0;});
+  var curGanhoMap={}; var ci; for(ci=0;ci<curArrGanho.length;ci++) curGanhoMap[curArrGanho[ci].name]=curArrGanho[ci].ganho;
+  var namesSet={}; var combined=[];
+  for(i=0;i<HIST_STATS.length;i++) namesSet[HIST_STATS[i].n]=true;
+  for(ci=0;ci<curArrGanho.length;ci++) namesSet[curArrGanho[ci].name]=true;
+  var nmKey; for(nmKey in namesSet){
+    var histRow=HIST_STATS.filter(function(x){return x.n===nmKey;})[0];
+    var histPrem=histRow?histRow.prem:0, histNet=histRow?histRow.net:0;
+    var curG=curGanhoMap[nmKey]!==undefined?curGanhoMap[nmKey]:0;
+    combined.push({n:nmKey, prem:histPrem, net:histNet, curG:curG, total:histNet+curG});
+  }
+  combined.sort(function(a,b){return b.total-a.total;});
+  return combined;
+}
+function buildGanhoPoster(){
+  var rows=ganhoAllTimeRows();
+  function cell(v,bold){ var c=v>=0?'#1f7a4d':'#c0392b'; return '<td style="text-align:right;padding:7px 12px;color:'+c+';font-weight:'+(bold?800:600)+';white-space:nowrap">'+(v>=0?'+':'')+money(v)+'</td>'; }
+  var h='<div class="cel-poster ganho" id="celGanhoPoster">';
+  h+='<button class="cel-close" onclick="closeCelebrate()">&#10005;</button>';
+  h+=shareButtonHtml();
+  h+='<div class="cel-hint">Print pra postar &#128241;</div>';
+  h+='<div class="cel-plan-brand" style="margin-top:34px">&#9824; SP<span style="color:var(--brass-deep)">oker</span>N &#9830; <span class="cel-plan-title2">Ganho efetivo (all-time) &middot; '+fmtDate(new Date().toISOString().slice(0,10))+'</span></div>';
+  h+='<table class="cel-gtable"><thead><tr><th style="text-align:left">#</th><th style="text-align:left">Jogador</th><th>Premia\u00e7\u00f5es</th><th>L\u00edquido</th><th>Nesta temporada</th><th>Total combinado</th></tr></thead><tbody>';
+  var i;
+  for(i=0;i<rows.length;i++){
+    var g=rows[i];
+    h+='<tr><td style="padding:7px 8px;color:#777">'+(i+1)+'</td><td style="padding:7px 12px;font-weight:700;white-space:nowrap">'+g.n+'</td><td style="text-align:right;padding:7px 12px;white-space:nowrap">'+money(g.prem)+'</td>'+cell(g.net,true)+cell(g.curG,false)+cell(g.total,true)+'</tr>';
+  }
+  h+='</tbody></table>';
+  h+='<div style="font-size:10px;color:#555;margin-top:8px;max-width:560px">Premia\u00e7\u00f5es = tudo que ganhou. L\u00edquido = temporadas fechadas, j\u00e1 descontando buy-ins. Total combinado = l\u00edquido + temporada em andamento.</div>';
+  h+='</div>';
+  return h;
+}
 function openCelebrate(type, idx){
   if((type==='etapa'||type==='resumo'||type==='evolucao') && (idx===undefined || !ETAPAS[idx])){ alert('Escolha uma etapa v\u00e1lida.'); return; }
   STATE.celebrate={type:type, idx:idx};
@@ -1634,7 +1678,7 @@ function shareButtonHtml(){
   return '<button class="cel-share" onclick="shareCelebrateImage()">&#128257; Compartilhar</button>';
 }
 function shareCelebrateImage(){
-  var target=document.getElementById('celebrateOverlay');
+  var target=document.getElementById('celGanhoPoster') || document.getElementById('celebrateOverlay');
   if(!target || typeof html2canvas==='undefined'){ alert('N\u00e3o foi poss\u00edvel preparar a imagem. Tente novamente em instantes.'); return; }
   var btns=target.querySelectorAll('.cel-share, .cel-close, .cel-hint');
   var i; for(i=0;i<btns.length;i++) btns[i].style.visibility='hidden'; // não aparecem na imagem final
@@ -1665,7 +1709,7 @@ function renderCelebrate(){
   var el=document.getElementById('celebrateOverlay');
   el.style.display='block';
   var t=STATE.celebrate.type;
-  el.innerHTML = (t==='resumo') ? buildResumoPoster(STATE.celebrate.idx) : (t==='evolucao') ? buildEvolucaoPoster(STATE.celebrate.idx) : buildCelebratePoster();
+  el.innerHTML = (t==='ganho') ? buildGanhoPoster() : (t==='resumo') ? buildResumoPoster(STATE.celebrate.idx) : (t==='evolucao') ? buildEvolucaoPoster(STATE.celebrate.idx) : buildCelebratePoster();
   document.getElementById('view').parentNode.style.display='none';
   if(t==='evolucao'){ el.classList.add('no-scroll'); fitEvolucaoToScreen(); }
   else { el.classList.remove('no-scroll'); }
@@ -2605,18 +2649,7 @@ function viewHistorico(){
   h+='</tbody></table></div></div>';
 
   // ganho efetivo histórico (premiação x líquido) + total combinado com a temporada atual
-  var curArrGanho=classification().filter(function(p){return p.games>0;});
-  var curGanhoMap={}; var ci; for(ci=0;ci<curArrGanho.length;ci++) curGanhoMap[curArrGanho[ci].name]=curArrGanho[ci].ganho;
-  var namesSet={}; var combined=[];
-  for(i=0;i<HIST_STATS.length;i++) namesSet[HIST_STATS[i].n]=true;
-  for(ci=0;ci<curArrGanho.length;ci++) namesSet[curArrGanho[ci].name]=true;
-  var nmKey; for(nmKey in namesSet){
-    var histRow=HIST_STATS.filter(function(x){return x.n===nmKey;})[0];
-    var histPrem=histRow?histRow.prem:0, histNet=histRow?histRow.net:0;
-    var curG=curGanhoMap[nmKey]!==undefined?curGanhoMap[nmKey]:0;
-    combined.push({n:nmKey, prem:histPrem, net:histNet, curG:curG, total:histNet+curG});
-  }
-  combined.sort(function(a,b){return b.total-a.total;});
+  var combined=ganhoAllTimeRows();
   h+='<div class="panel"><div class="eyebrow">Bolso</div><h2>Ganho efetivo (all-time)</h2>';
   h+='<div class="muted" style="margin:-8px 0 10px">L\u00edquido = temporadas j\u00e1 fechadas. Total combinado = l\u00edquido histórico + o que j\u00e1 rendeu na temporada em andamento.</div>';
   h+='<div class="tblwrap"><table><thead><tr><th>Jogador</th><th class="num">Premia\u00e7\u00f5es</th><th class="num">L\u00edquido</th><th class="num">Nesta temporada</th><th class="num">Total combinado</th></tr></thead><tbody>';
@@ -2631,6 +2664,7 @@ function viewHistorico(){
     h+='<tr><td><b>'+g.n+'</b></td><td class="num">'+money(g.prem)+'</td><td class="num" style="'+col+';font-weight:700">'+sign+money(g.net)+'</td><td class="num" style="'+colCur+'">'+signCur+money(g.curG)+'</td><td class="num" style="'+colTot+';font-weight:800">'+signTot+money(g.total)+'</td></tr>';
   }
   h+='</tbody></table></div>';
+  h+='<button class="btn" style="margin-top:10px" onclick="openCelebrate(\'ganho\')">&#128248; Gerar imagem da tabela completa</button>';
   h+='<div class="muted" style="margin-top:8px">Premia\u00e7\u00f5es = tudo que ganhou. L\u00edquido = j\u00e1 descontando todo o investimento em buy-ins ao longo dos anos &mdash; positivo = no lucro, negativo = no preju\u00edzo.</div></div>';
   // maior sequência de vitórias — ranking (respeita o filtro)
   h+='<div class="panel"><div class="eyebrow">Fama'+(!isAllSel?' \u00b7 filtrado':'')+'</div><h2>Maior sequ\u00eancia de vit\u00f3rias</h2>';
