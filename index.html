@@ -1289,7 +1289,7 @@ function fmtDate(iso){
 }
 function fmtDateShort(iso){ var p=iso.split('-'); return p[2]+'/'+p[1]; }
 
-var BUILD='2026-11-22a'; // selo de build (padr\u00e3o dos outros apps): data + letra; incrementar a cada publica\u00e7\u00e3o
+var BUILD='2026-11-22b'; // selo de build (padr\u00e3o dos outros apps): data + letra; incrementar a cada publica\u00e7\u00e3o
 function renderNav(){
   var bv=document.getElementById('buildVer'); if(bv) bv.textContent='build '+BUILD;
   var n=document.getElementById('nav');
@@ -1672,6 +1672,69 @@ function buildCelebratePoster(){
   h+='<div class="cel-podium">'+rows+'</div>';
   h+='<div class="cel-footer">&#9824; &#9827; &#9829; &#9830; <b>SPokerN</b> &middot; Campeonato de poker entre amigos</div>';
   h+='</div></div>';
+  return h;
+}
+/* ---------- Comparativo: temporada atual x semestres anteriores no mesmo ponto (etapa N) ---------- */
+function seasonScoreAt(etapas, k){
+  // pontuação definitiva (soma − 3 piores, ausência = 0) após as k primeiras etapas; sem multas de atraso
+  var by={}, i, j, nm;
+  for(i=0;i<k;i++){
+    var res=etapas[i].results||[];
+    for(j=0;j<res.length;j++){ nm=res[j].name; if(!by[nm]) by[nm]=[]; by[nm].push(pointsForPos(res[j].pos)); }
+  }
+  var out=[];
+  for(nm in by){
+    var all=by[nm].slice(), pad=k-all.length, q;
+    for(q=0;q<pad;q++) all.push(0);
+    all.sort(function(a,b){return a-b;});
+    var tot=0, d=0;
+    for(q=0;q<all.length;q++){ tot+=all[q]; if(q<3 && k>3) d+=all[q]; }
+    out.push({name:nm, total:tot-d});
+  }
+  out.sort(function(a,b){return b.total-a.total;});
+  return out;
+}
+function comparativoPanel(){
+  var N=ETAPAS.length;
+  var h='<div class="panel"><div class="eyebrow">Comparativo</div><h2>Hoje x semestres anteriores</h2>';
+  if(N<SEASON_MATURITY_ETAPAS){
+    h+='<div class="empty">Disponível a partir da etapa '+SEASON_MATURITY_ETAPAS+' da temporada atual.</div></div>';
+    return h;
+  }
+  var cur=seasonScoreAt(ETAPAS,N);
+  var curLead=cur.length>1 ? cur[0].total-cur[1].total : 0;
+  var list=masterSeasonList(), rows=[], i;
+  for(i=0;i<list.length;i++){
+    if(list[i].key===CONFIG.seasonName) continue;
+    var et=buildFullEtapaPool([list[i].key]);
+    if(et.length<SEASON_MATURITY_ETAPAS) continue;
+    var kk=Math.min(N,et.length);
+    var at=seasonScoreAt(et,kk), fin=seasonScoreAt(et,et.length);
+    if(at.length<2||fin.length<2) continue;
+    rows.push({label:list[i].label, len:et.length, kk:kk, full:et.length>=N,
+      leader:at[0].name, leadPts:at[0].total, lead:at[0].total-at[1].total,
+      champ:fin[0].name, champPts:fin[0].total, champLead:fin[0].total-fin[1].total,
+      held:at[0].name===fin[0].name});
+  }
+  h+='<div class="muted" style="margin:-8px 0 10px">Compara o líder após <b>'+N+' etapas</b> em cada temporada anterior com o campeão final. Pontuação definitiva (soma menos os 3 piores), sem multas de atraso.</div>';
+  h+='<div class="pill-line"><span><b>'+CONFIG.seasonName+' (agora)</b></span><span>'+(cur[0]?cur[0].name+' · '+cur[0].total+' pts · +'+curLead+' sobre o 2º':'—')+'</span></div>';
+  // estatísticas
+  var comp=[], bigger=[], j;
+  for(i=0;i<rows.length;i++){ if(rows[i].full){ comp.push(rows[i]); if(rows[i].lead>=curLead) bigger.push(rows[i]); } }
+  function cnt(a){ var c=0,x; for(x=0;x<a.length;x++) if(a[x].held) c++; return c; }
+  if(comp.length){
+    h+='<div style="margin:10px 0;line-height:1.5">Em <b>'+cnt(comp)+' de '+comp.length+'</b> temporadas ('+Math.round(100*cnt(comp)/comp.length)+'%) quem liderava após '+N+' etapas foi campeão.';
+    if(bigger.length) h+=' Quando a vantagem era de <b>'+curLead+' pts ou mais</b>: <b>'+cnt(bigger)+' de '+bigger.length+'</b>.';
+    else h+=' Nenhuma temporada anterior teve vantagem de '+curLead+' pts ou mais nesse ponto.';
+    h+='</div>';
+  }
+  h+='<div class="tblwrap"><table><thead><tr><th>Temporada</th><th>Líder na etapa '+N+'</th><th class="num">Vantagem</th><th>Campeão</th><th class="ctr">Manteve?</th></tr></thead><tbody>';
+  for(i=rows.length-1;i>=0;i--){
+    var r=rows[i];
+    h+='<tr><td>'+r.label+'<div class="muted" style="font-size:11px">'+r.len+' etapas'+(r.full?'':' (etapa '+r.kk+')')+'</div></td><td>'+r.leader+' <span class="muted">'+r.leadPts+'</span></td><td class="num">+'+r.lead+'</td><td>'+r.champ+' <span class="muted">'+r.champPts+'</span></td><td class="ctr">'+(r.held?'✅':'❌')+'</td></tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<div class="muted" style="margin-top:8px">Regras antigas podem ter variado (nº de etapas, descarte); a comparação é aproximada.</div></div>';
   return h;
 }
 function ganhoAllTimeRows(){
@@ -2694,6 +2757,7 @@ function viewHistorico(){
   }
   h+='</tbody></table></div></div>';
 
+  h+=comparativoPanel();
   // ganho efetivo histórico (premiação x líquido) + total combinado com a temporada atual
   var combined=ganhoAllTimeRows();
   h+='<div class="panel"><div class="eyebrow">Bolso</div><h2>Ganho efetivo (all-time)</h2>';
