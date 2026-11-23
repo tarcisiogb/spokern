@@ -924,6 +924,48 @@ function avulsaFinance(av){
   }
   return {pote:pote, prize1:prize1, prize2:prize2, winner:winner, second:second, playersCount:results.length};
 }
+function avulsaWhatsappText(av){
+  var f=avulsaFinance(av);
+  var L=[];
+  L.push('*AVULSA - '+fmtDate(av.date)+'*');
+  L.push('Total arrecadado: '+money(f.pote));
+  L.push('');
+  if(f.winner){
+    L.push(f.winner.name+' ganhou ('+money(f.prize1)+')');
+  }
+  if(f.second){
+    var net2=f.second.net, cac=f.second.entries;
+    if(net2>=0){
+      L.push(f.second.name+' ficou em segundo, deveria receber '+money(f.prize2)+' mas como pegou '+cac+' '+pluralS(cac,'cacife','cacifes')+' tem que receber '+money(net2));
+    } else {
+      L.push(f.second.name+' ficou em segundo, mas como pegou '+cac+' '+pluralS(cac,'cacife','cacifes')+' (mais que o pr\u00eamio de '+money(f.prize2)+'), precisa pagar '+money(-net2)+' ao '+(f.winner?f.winner.name:'1\u00ba'));
+    }
+  }
+  L.push('');
+  var rebuys=0, i, r;
+  for(i=0;i<av.results.length;i++) rebuys+=Math.max(0,av.results[i].entries-1);
+  L.push(f.playersCount+' inscritos e '+rebuys+' re-buys');
+  L.push('');
+  for(i=0;i<av.results.length;i++){
+    r=av.results[i];
+    L.push(r.name+'\t'+money(r.buyin).replace('R$ ','R$'));
+  }
+  L.push('');
+  if(f.winner) L.push('PIX: '+f.winner.name+': '+findPix(f.winner.name));
+  if(f.second) L.push('PIX: '+f.second.name+': '+findPix(f.second.name));
+  return L.join('\n');
+}
+function showAvulsaWhats(idx){
+  var av=AVULSAS[idx]; if(!av) return;
+  var t=avulsaWhatsappText(av);
+  openModal('<h2>Texto do WhatsApp \u2014 Avulsa '+fmtDateShort(av.date)+'</h2><pre class="wa" id="waAvOut">'+escapeHtml(t)+'</pre><div class="row-flex"><button class="btn" onclick="copyAvulsaWhats()">Copiar</button><button class="btn ghost" onclick="closeModal()">Fechar</button></div>');
+}
+function copyAvulsaWhats(){
+  var el=document.getElementById('waAvOut'); if(!el) return;
+  var txt=el.textContent;
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){ alert('Copiado!'); }).catch(function(){ alert('Selecione o texto e copie manualmente.'); }); }
+  else { alert('Selecione o texto e copie manualmente.'); }
+}
 function avulsaPendingCount(av){
   var r=av.results, i, n=0;
   for(i=0;i<r.length;i++){ var pay=av.pay?av.pay[r[i].name]:null; if(!pay||!pay.paid) n++; }
@@ -2085,6 +2127,7 @@ function viewAvulsas(){
         h+='</tr>';
       }
       h+='</tbody></table></div>';
+      h+='<button class="btn ghost" style="margin-top:10px" onclick="showAvulsaWhats('+i+')">&#128203; Texto do WhatsApp</button>';
       h+='</div>';
     }
   }
